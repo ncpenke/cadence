@@ -115,6 +115,10 @@ type Runtime interface {
 	// such as executing a program.
 	//
 	Storage(context Context) (*Storage, *interpreter.Interpreter, error)
+
+	// SetDebugger configures interpreters with the given debugger.
+	//
+	SetDebugger(debugger *interpreter.Debugger)
 }
 
 var typeDeclarations = append(
@@ -169,6 +173,7 @@ func reportMetric(
 // interpreterRuntime is a interpreter-based version of the Flow runtime.
 type interpreterRuntime struct {
 	coverageReport                       *CoverageReport
+	debugger                             *interpreter.Debugger
 	contractUpdateValidationEnabled      bool
 	atreeValidationEnabled               bool
 	tracingEnabled                       bool
@@ -245,6 +250,9 @@ func (r *interpreterRuntime) Recover(onError func(error), context Context) {
 		err = recovered
 	case error:
 		err = newError(recovered, context)
+	default:
+		err = fmt.Errorf("%s", recovered)
+		err = newError(err, context)
 	}
 
 	onError(err)
@@ -272,6 +280,10 @@ func (r *interpreterRuntime) SetInvalidatedResourceValidationEnabled(enabled boo
 
 func (r *interpreterRuntime) SetResourceOwnerChangeHandlerEnabled(enabled bool) {
 	r.resourceOwnerChangeHandlerEnabled = enabled
+}
+
+func (r *interpreterRuntime) SetDebugger(debugger *interpreter.Debugger) {
+	r.debugger = debugger
 }
 
 func (r *interpreterRuntime) ExecuteScript(script Script, context Context) (val cadence.Value, err error) {
@@ -1423,6 +1435,7 @@ func (r *interpreterRuntime) newInterpreter(
 		interpreter.WithOnResourceOwnerChangeHandler(r.resourceOwnerChangedHandler(context.Interface)),
 		interpreter.WithInvalidatedResourceValidationEnabled(r.invalidatedResourceValidationEnabled),
 		interpreter.WithMemoryGauge(memoryGauge),
+		interpreter.WithDebugger(r.debugger),
 	}
 
 	defaultOptions = append(defaultOptions,
