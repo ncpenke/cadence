@@ -3092,6 +3092,8 @@ func (r *interpreterRuntime) onStatementHandler() interpreter.OnStatementFunc {
 
 func (r *interpreterRuntime) Storage(context Context) (*Storage, *interpreter.Interpreter, error) {
 
+	context.InitializeCodesAndPrograms()
+
 	memoryGauge, _ := context.Interface.(common.MemoryGauge)
 	storage := NewStorage(context.Interface, memoryGauge)
 
