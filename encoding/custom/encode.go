@@ -325,8 +325,9 @@ func (e *SemaEncoder) Encode(t sema.Type) (err error) {
 }
 
 // EncodeType encodes any supported sema.Type.
+// Includes concrete type identifier because "Type" is an abstract type
+// ergo it can't be instantiated on decode.
 func (e *SemaEncoder) EncodeType(t sema.Type) (err error) {
-
 	err = e.EncodeTypeIdentifier(t)
 	if err != nil { return }
 
@@ -365,8 +366,8 @@ func (e *SemaEncoder) EncodeType(t sema.Type) (err error) {
 		return e.EncodeDictionaryType(concreteType)
 	case *sema.ReferenceType:
 		return e.EncodeReferenceType(concreteType)
-	case *sema.AddressType:
-		return // type is an empty struct
+	//case *sema.AddressType: // TODO this is an IntegerRangedType so maybe not needed here
+	//	return // type is an empty struct
 	case *sema.TransactionType:
 		return e.EncodeTransactionType(concreteType)
 	case *sema.RestrictedType:
@@ -558,8 +559,10 @@ func (e *SemaEncoder) EncodeIntegerRangedType(t sema.IntegerRangedType) (err err
 	switch concreteType := t.(type) {
 	case *sema.NumericType:
 		return e.EncodeNumericType(concreteType)
+	case *sema.AddressType:
+		return // AddressType is an empty struct so nothing to encode
 	default:
-		return fmt.Errorf("Unexpected integer ranged type: %s", concreteType)
+		return fmt.Errorf("unexpected integer ranged type: %s", concreteType)
 	}
 }
 
@@ -1076,4 +1079,4 @@ func (e *SemaEncoder) EncodeAddress(address common.Address) (err error) {
 func (e *SemaEncoder) write(b []byte) (err error) {
 	_, err = e.w.Write(b)
 	return
-}
+}v
