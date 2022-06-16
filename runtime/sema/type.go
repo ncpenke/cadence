@@ -886,6 +886,7 @@ type NumericType struct {
 }
 
 var _ IntegerRangedType = &NumericType{}
+var _ SaturatingArithmeticType = &NumericType{}
 
 func NewNumericType(typeName string) *NumericType {
 	return &NumericType{name: typeName}
@@ -1059,6 +1060,7 @@ type FixedPointNumericType struct {
 }
 
 var _ FractionalRangedType = &FixedPointNumericType{}
+var _ SaturatingArithmeticType = &FixedPointNumericType{}
 
 func NewFixedPointNumericType(typeName string) *FixedPointNumericType {
 	return &FixedPointNumericType{
@@ -3607,6 +3609,11 @@ type CompositeType struct {
 	cachedIdentifiersLock sync.RWMutex
 }
 
+var _ ContainedType = &CompositeType{}
+var _ ContainerType = &CompositeType{}
+var _ CompositeKindedType = &CompositeType{}
+var _ LocatedType = &CompositeType{}
+
 func (t *CompositeType) Tag() TypeTag {
 	return CompositeTypeTag
 }
@@ -4133,6 +4140,10 @@ type InterfaceType struct {
 	}
 	cachedIdentifiersLock sync.RWMutex
 }
+
+var _ ContainedType = &InterfaceType{}
+var _ ContainerType = &InterfaceType{}
+var _ CompositeKindedType = &InterfaceType{}
 
 func (*InterfaceType) IsType() {}
 
@@ -6062,6 +6073,7 @@ type CapabilityType struct {
 }
 
 var _ Type = &CapabilityType{}
+var _ ParameterizedType = &CapabilityType{}
 
 func NewCapabilityType(memoryGauge common.MemoryGauge, borrowType Type) *CapabilityType {
 	common.UseMemory(memoryGauge, common.CapabilitySemaTypeMemoryUsage)

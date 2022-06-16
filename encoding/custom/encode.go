@@ -26,7 +26,6 @@ import (
 	"github.com/onflow/cadence/runtime/ast"
 	"github.com/onflow/cadence/runtime/common"
 	"github.com/onflow/cadence/runtime/sema"
-	"github.com/pkg/errors"
 	"io"
 	"math/big"
 	goRuntime "runtime"
@@ -233,7 +232,7 @@ func (e *Encoder) EncodeConstantSizedArrayType(t cadence.ConstantSizedArrayType)
 // It uses 4 bytes.
 func (e *Encoder) EncodeLength(length int) (err error) {
 	if length < 0 { // TODO is this safety check useful?
-		return errors.Errorf("Cannot encode length below zero: %d", length)
+		return fmt.Errorf("Cannot encode length below zero: %d", length)
 	}
 
 	// TODO is type conversion safe here?
@@ -331,23 +330,23 @@ func (e *SemaEncoder) EncodeType(t sema.Type) (err error) {
 	err = e.EncodeTypeIdentifier(t)
 	if err != nil { return }
 
-	// TODO more types
-
 	switch concreteType := t.(type) {
+	case *sema.SimpleType:
+		return e.EncodeSimpleType(concreteType)
 	case *sema.CompositeType:
 		return e.EncodeCompositeType(concreteType)
-	case sema.ValueIndexableType:
-		panic("TODO")
-	case sema.ContainedType:
-		panic("TODO")
-	case sema.ContainerType:
-		panic("TODO")
-	case sema.CompositeKindedType:
-		panic("TODO")
-	case sema.LocatedType:
-		panic("TODO")
-	case sema.ParameterizedType:
-		panic("TODO")
+	//case sema.ValueIndexableType:
+	//	panic("TODO")
+	//case sema.ContainedType:
+	//	panic("TODO")
+	//case sema.ContainerType:
+	//	panic("TODO")
+	//case sema.CompositeKindedType:
+	//	panic("TODO")
+	//case sema.LocatedType:
+	//	panic("TODO")
+	//case sema.ParameterizedType:
+	//	panic("TODO")
 	case *sema.OptionalType:
 		return e.EncodeOptionalType(concreteType)
 	case *sema.GenericType:
@@ -356,38 +355,182 @@ func (e *SemaEncoder) EncodeType(t sema.Type) (err error) {
 		return e.EncodeIntegerRangedType(concreteType)
 	case sema.FractionalRangedType:
 		return e.EncodeFractionalRangedType(concreteType)
-	case sema.SaturatingArithmeticType:
-		panic("TODO")
+	//case sema.SaturatingArithmeticType:
+	//	panic("TODO")
 	case sema.ArrayType:
 		return e.EncodeArrayType(concreteType)
 	case *sema.FunctionType:
-		panic("TODO")
+		return e.EncodeFunctionType(concreteType)
 	case *sema.DictionaryType:
-		panic("TODO")
+		return e.EncodeDictionaryType(concreteType)
 	case *sema.ReferenceType:
-		panic("TODO")
+		return e.EncodeReferenceType(concreteType)
 	case *sema.AddressType:
 		return // type is an empty struct
 	case *sema.TransactionType:
-		panic("TODO")
+		return e.EncodeTransactionType(concreteType)
 	case *sema.RestrictedType:
-		panic("TODO")
+		return e.EncodeRestrictedType(concreteType)
 	case *sema.CapabilityType:
-		panic("TODO")
-		// TODO more types
+		return e.EncodeCapabilityType(concreteType)
 	default:
-		return errors.Errorf("Unexpected type: %s", concreteType)
+		return fmt.Errorf("unexpected type: %s", concreteType)
 	}
 }
 
+func (e *SemaEncoder) EncodeSimpleType(t *sema.SimpleType) (err error) {
+	err = e.EncodeString(t.Name)
+	if err != nil { return }
+
+	err = e.EncodeString(t.QualifiedString())
+	if err != nil { return }
+
+	err = e.EncodeString(string(t.TypeID))
+	if err != nil { return }
+
+	err = e.EncodeTypeTag(t.Tag())
+	if err != nil { return }
+
+	err = e.EncodeBool(t.IsInvalid)
+	if err != nil { return }
+
+	err = e.EncodeBool(t.IsResource)
+	if err != nil { return }
+
+	err = e.EncodeBool(t.Storable)
+	if err != nil { return }
+
+	err = e.EncodeBool(t.Equatable)
+	if err != nil { return }
+
+	err = e.EncodeBool(t.ExternallyReturnable)
+	if err != nil { return }
+
+	err = e.EncodeBool(t.Importable)
+	if err != nil { return }
+
+	// TODO how to handle IsSuperTypeOf?
+	//      should we encode each simple type as an enum?
+	//      then the decoder would find the instantiated simple types
+
+	// TODO Members
+
+	err = e.EncodeStringTypeOrderedMap(t.NestedTypes)
+	if err != nil { return }
+
+	return e.EncodeValueIndexingInfo(t.ValueIndexingInfo)
+}
+
+func (e *SemaEncoder) EncodeValueIndexingInfo(info sema.ValueIndexingInfo) (err error) {
+	err = e.EncodeBool(info.IsValueIndexableType)
+	if err != nil { return }
+
+	err = e.EncodeBool(info.AllowsValueIndexingAssignment)
+	if err != nil { return }
+
+	// TODO ElementType? it's a function, so...
+
+	return e.EncodeNumericType(info.IndexingType)
+}
+
 func (e *SemaEncoder) EncodeArrayType(t sema.ArrayType) (err error) {
-	// TODO more types?
 	switch concreteType := t.(type) {
 	case *sema.VariableSizedType:
 		return e.EncodeVariableSizedType(concreteType)
 	case *sema.ConstantSizedType:
 		return e.EncodeConstantSizedType(concreteType)
+	default:
+		return fmt.Errorf("Unexpected array type: %s", concreteType)
 	}
+}
+
+func (e *SemaEncoder) EncodeFunctionType(t *sema.FunctionType) (err error) {
+	err = e.EncodeBool(t.IsConstructor)
+	if err != nil { return }
+
+	err = e.EncodeLength(len(t.TypeParameters))
+	if err != nil { return }
+	for _, p := range t.TypeParameters {
+		err = e.EncodeTypeParameter(p)
+		if err != nil { return }
+	}
+
+	err = e.EncodeLength(len(t.Parameters))
+	if err != nil { return }
+	for _, p := range t.Parameters {
+		err = e.EncodeParameter(p)
+		if err != nil { return }
+	}
+
+	err = e.EncodeTypeAnnotation(t.ReturnTypeAnnotation)
+	if err != nil { return }
+
+	err = e.EncodeInt64(int64(*t.RequiredArgumentCount))
+	if err != nil { return }
+
+	// TODO can ArgumentExpressionCheck by omitted?
+
+	return e.EncodeStringMemberOrderedMap(t.Members)
+}
+
+func (e *SemaEncoder) EncodeDictionaryType(t *sema.DictionaryType) (err error) {
+	err = e.EncodeType(t.KeyType)
+	if err != nil { return }
+
+	return e.EncodeType(t.ValueType)
+}
+
+func (e *SemaEncoder) EncodeReferenceType(t *sema.ReferenceType) (err error) {
+	err = e.EncodeBool(t.Authorized)
+	if err != nil { return }
+
+	return e.EncodeType(t.Type)
+}
+
+func (e *SemaEncoder) EncodeTransactionType(t *sema.TransactionType) (err error) {
+	err = e.EncodeStringMemberOrderedMap(t.Members)
+	if err != nil { return }
+
+	err = e.EncodeLength(len(t.Fields))
+	if err != nil { return }
+	for _, field := range t.Fields {
+		err = e.EncodeString(field)
+		if err != nil { return }
+	}
+
+	err = e.EncodeLength(len(t.PrepareParameters))
+	if err != nil { return }
+	for _, p := range t.PrepareParameters {
+		err = e.EncodeParameter(p)
+		if err != nil { return }
+	}
+
+	err = e.EncodeLength(len(t.Parameters))
+	if err != nil { return }
+	for _, p := range t.Parameters {
+		err = e.EncodeParameter(p)
+		if err != nil { return }
+	}
+
+	return
+}
+
+func (e *SemaEncoder) EncodeRestrictedType(t *sema.RestrictedType) (err error) {
+	err = e.EncodeType(t.Type)
+	if err != nil { return }
+
+	err = e.EncodeLength(len(t.Restrictions))
+	if err != nil { return }
+	for _, inter := range t.Restrictions {
+		err = e.EncodeInterfaceType(inter)
+		if err != nil { return }
+	}
+
+	return
+}
+
+func (e *SemaEncoder) EncodeCapabilityType(t *sema.CapabilityType) (err error) {
+	return e.EncodeType(t.BorrowType)
 }
 
 func (e *SemaEncoder) EncodeOptionalType(t *sema.OptionalType) (err error) {
@@ -416,11 +559,14 @@ func (e *SemaEncoder) EncodeIntegerRangedType(t sema.IntegerRangedType) (err err
 	case *sema.NumericType:
 		return e.EncodeNumericType(concreteType)
 	default:
-		return errors.Errorf("Unexpected integer ranged type: %s", concreteType)
+		return fmt.Errorf("Unexpected integer ranged type: %s", concreteType)
 	}
 }
 
 func (e *SemaEncoder) EncodeNumericType(t *sema.NumericType) (err error) {
+	err = e.EncodeIsNonNil(t)
+	if err != nil || t == nil { return }
+
 	// name -> string
 	err = e.EncodeString(t.QualifiedString())
 	if err != nil { return }
@@ -449,6 +595,11 @@ func (e *SemaEncoder) EncodeNumericType(t *sema.NumericType) (err error) {
 	return e.EncodeBool(t.IsSuperType())
 }
 
+// EncodePresent indicates if the following value is nil or non-nil.
+func (e *SemaEncoder) EncodeIsNonNil(thing any) (err error) {
+	return e.EncodeBool(thing != nil)
+}
+
 func (e *SemaEncoder) EncodeFractionalRangedType(t sema.FractionalRangedType) (err error) {
 	// TODO more types?
 	// TODO encode more concrete types instead? like cadence's Fix64
@@ -456,7 +607,7 @@ func (e *SemaEncoder) EncodeFractionalRangedType(t sema.FractionalRangedType) (e
 	case *sema.FixedPointNumericType:
 		return e.EncodeFixedPointNumericType(concreteType)
 	default:
-		return errors.Errorf("Unexpected fractional ranged type: %s", concreteType)
+		return fmt.Errorf("Unexpected fractional ranged type: %s", concreteType)
 	}
 }
 
@@ -513,6 +664,7 @@ type EncodedSema byte
 
 const (
 	EncodedSemaUnknown EncodedSema = iota
+	EncodedSemaSimpleType
 	EncodedSemaCompositeType
 	EncodedSemaOptionalType
 	EncodedSemaGenericType
@@ -520,11 +672,20 @@ const (
 	EncodedSemaFixedPointNumericType
 	EncodedSemaVariableSizedType
 	EncodedSemaConstantSizedType
+	EncodedSemaFunctionType
+	EncodedSemaDictionaryType
+	EncodedSemaReferenceType
+	EncodedSemaAddressType
+	EncodedSemaTransactionType
+	EncodedSemaRestrictedType
+	EncodedSemaCapabilityType
 )
 
 func (e *SemaEncoder) EncodeTypeIdentifier(t sema.Type) (err error) {
 	id := EncodedSemaUnknown
 	switch concreteType := t.(type) {
+	case *sema.SimpleType:
+		id = EncodedSemaSimpleType
 	case *sema.CompositeType:
 		id = EncodedSemaCompositeType
 	case *sema.OptionalType:
@@ -539,8 +700,22 @@ func (e *SemaEncoder) EncodeTypeIdentifier(t sema.Type) (err error) {
 		id = EncodedSemaVariableSizedType
 	case *sema.ConstantSizedType:
 		id = EncodedSemaConstantSizedType
+	case *sema.FunctionType:
+		id = EncodedSemaFunctionType
+	case *sema.DictionaryType:
+		id = EncodedSemaDictionaryType
+	case *sema.ReferenceType:
+		id = EncodedSemaReferenceType
+	case *sema.AddressType:
+		id = EncodedSemaAddressType
+	case *sema.TransactionType:
+		id = EncodedSemaTransactionType
+	case *sema.RestrictedType:
+		id = EncodedSemaRestrictedType
+	case *sema.CapabilityType:
+		id = EncodedSemaCapabilityType
 	default:
-		return errors.Errorf("Unexpected type: %s", concreteType)
+		return fmt.Errorf("unexpected type: %s", concreteType)
 	}
 
 	return e.write([]byte{byte(id)})
@@ -637,6 +812,10 @@ func (e *SemaEncoder) EncodeParameter(parameter *sema.Parameter) (err error) {
 }
 
 func (e *SemaEncoder) EncodeStringMemberOrderedMap(om *sema.StringMemberOrderedMap) (err error) {
+	if om == nil {
+		return e.EncodeLength(0)
+	}
+
 	err = e.EncodeLength(om.Len())
 	if err != nil { return }
 
@@ -653,6 +832,10 @@ func (e *SemaEncoder) EncodeStringMemberOrderedMap(om *sema.StringMemberOrderedM
 }
 
 func (e *SemaEncoder) EncodeStringTypeOrderedMap(om *sema.StringTypeOrderedMap) (err error) {
+	if om == nil {
+		return e.EncodeLength(0)
+	}
+
 	err = e.EncodeLength(om.Len())
 	if err != nil { return }
 
@@ -789,7 +972,7 @@ func (e *SemaEncoder) EncodeLocation(t common.Location) (err error) {
 	case common.REPLLocation:
 		return e.EncodeREPLLocation()
 	default:
-		return errors.Errorf("Unexpected loation type: %s", concreteType)
+		return fmt.Errorf("Unexpected loation type: %s", concreteType)
 	}
 }
 
@@ -872,7 +1055,7 @@ func (e *SemaEncoder) EncodeCharacter(c rune) (err error) {
 // It uses 4 bytes.
 func (e *SemaEncoder) EncodeLength(length int) (err error) {
 	if length < 0 { // TODO is this safety check useful?
-		return errors.Errorf("Cannot encode length below zero: %d", length)
+		return fmt.Errorf("Cannot encode length below zero: %d", length)
 	}
 
 	// TODO is type conversion safe here?

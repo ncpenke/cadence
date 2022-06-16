@@ -22,7 +22,6 @@ import (
 	"bytes"
 	"encoding/binary"
 	"fmt"
-	"github.com/pkg/errors"
 	"io"
 
 	"github.com/onflow/cadence"
@@ -141,7 +140,7 @@ func (d *Decoder) DecodeBool() (value cadence.Bool, err error) {
 	case 1:
 		value = cadence.NewMeteredBool(d.memoryGauge, true)
 	default:
-		err = errors.Errorf("Bool must be 0 or 1 not: %d", b[0])
+		err = fmt.Errorf("bool must be 0 or 1 not: %d", b[0])
 	}
 	return
 }
@@ -151,17 +150,17 @@ func (d *Decoder) DecodeArray(t *cadence.ArrayType) (array cadence.Array, err er
 	l, err := d.DecodeLength()
 	if err != nil { return }
 
-	array, err = cadence.NewMeteredArray(d.memoryGauge, l, func() (elements []cadence.Value, err error) {
-		elements = make([]cadence.Value, 0, l)
+	array, err = cadence.NewMeteredArray(d.memoryGauge, l, func() ([]cadence.Value, error) {
+		elements := make([]cadence.Value, 0, l)
 		for i := 0; i < l; i++ {
 			elementType, err := d.DecodeType()
-			if err != nil { return }
+			if err != nil { return nil, err }
 
 			elementValue, err := d.DecodeValue(elementType)
 			elements = append(elements, elementValue)
 		}
 
-		return
+		return elements, nil
 	})
 
 	array.WithType(*t)
