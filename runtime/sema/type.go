@@ -92,6 +92,7 @@ func containerTypeNames(typ Type, level int) (typeNames []string, bufSize int) {
 
 type TypeID = common.TypeID
 
+// TODO ROBERT this is the type used by the Elaboration
 type Type interface {
 	IsType()
 	ID() TypeID
@@ -454,6 +455,8 @@ type OptionalType struct {
 	Type Type
 }
 
+var _ Type = &OptionalType{}
+
 func NewOptionalType(memoryGauge common.MemoryGauge, typ Type) *OptionalType {
 	common.UseMemory(memoryGauge, common.OptionalSemaTypeMemoryUsage)
 	return &OptionalType{
@@ -653,6 +656,9 @@ func OptionalTypeMapFunctionType(typ Type) *FunctionType {
 type GenericType struct {
 	TypeParameter *TypeParameter
 }
+
+var _ Type = &GenericType{}
+
 
 func (*GenericType) IsType() {}
 
@@ -2492,6 +2498,8 @@ type FunctionType struct {
 	Members                  *StringMemberOrderedMap
 }
 
+var _ Type = &FunctionType{}
+
 func RequiredArgumentCount(count int) *int {
 	return &count
 }
@@ -3590,7 +3598,7 @@ type CompositeType struct {
 	hasComputedMembers    bool
 
 	// Only applicable for native composite types.
-	importable bool
+	ImportableWithoutLocation bool
 
 	cachedIdentifiers *struct {
 		TypeID              TypeID
@@ -3680,7 +3688,13 @@ func (t *CompositeType) QualifiedIdentifier() string {
 }
 
 func (t *CompositeType) ID() TypeID {
+	if t == nil {
+		panic("*CompositeType is nil")
+	}
 	t.initializeIdentifiers()
+	if t.cachedIdentifiers == nil {
+		panic("*CompositeType.cachedIdentifiers is nil")
+	}
 	return t.cachedIdentifiers.TypeID
 }
 
@@ -3769,7 +3783,7 @@ func (t *CompositeType) IsStorable(results map[*Member]bool) bool {
 func (t *CompositeType) IsImportable(results map[*Member]bool) bool {
 	// Use the pre-determined flag for native types
 	if t.Location == nil {
-		return t.importable
+		return t.ImportableWithoutLocation
 	}
 
 	// Only structures and enums can be imported
@@ -4351,6 +4365,8 @@ type DictionaryType struct {
 	memberResolversOnce sync.Once
 }
 
+var _ Type = &DictionaryType{}
+
 func NewDictionaryType(memoryGauge common.MemoryGauge, keyType, valueType Type) *DictionaryType {
 	common.UseMemory(memoryGauge, common.DictionarySemaTypeMemoryUsage)
 	return &DictionaryType{
@@ -4709,6 +4725,8 @@ type ReferenceType struct {
 	Authorized bool
 	Type       Type
 }
+
+var _ Type = &ReferenceType{}
 
 func NewReferenceType(memoryGauge common.MemoryGauge, typ Type, authorized bool) *ReferenceType {
 	common.UseMemory(memoryGauge, common.ReferenceSemaTypeMemoryUsage)
@@ -5682,6 +5700,8 @@ type TransactionType struct {
 	Parameters        []*Parameter
 }
 
+var _ Type = &TransactionType{}
+
 func (t *TransactionType) EntryPointFunctionType() *FunctionType {
 	return &FunctionType{
 		Parameters:           append(t.Parameters, t.PrepareParameters...),
@@ -5799,6 +5819,8 @@ type RestrictedType struct {
 	restrictionSet     *InterfaceSet
 	restrictionSetOnce sync.Once
 }
+
+var _ Type = &RestrictedType{}
 
 func NewRestrictedType(memoryGauge common.MemoryGauge, typ Type, restrictions []*InterfaceType) *RestrictedType {
 	common.UseMemory(memoryGauge, common.RestrictedSemaTypeMemoryUsage)
@@ -6038,6 +6060,8 @@ type CapabilityType struct {
 	memberResolvers     map[string]MemberResolver
 	memberResolversOnce sync.Once
 }
+
+var _ Type = &CapabilityType{}
 
 func NewCapabilityType(memoryGauge common.MemoryGauge, borrowType Type) *CapabilityType {
 	common.UseMemory(memoryGauge, common.CapabilitySemaTypeMemoryUsage)
@@ -6343,9 +6367,9 @@ const AccountKeyIsRevokedField = "isRevoked"
 var AccountKeyType = func() *CompositeType {
 
 	accountKeyType := &CompositeType{
-		Identifier: AccountKeyTypeName,
-		Kind:       common.CompositeKindStructure,
-		importable: false,
+		Identifier:                AccountKeyTypeName,
+		Kind:                      common.CompositeKindStructure,
+		ImportableWithoutLocation: false,
 	}
 
 	const accountKeyIndexFieldDocString = `The index of the account key`
@@ -6422,10 +6446,10 @@ If called with any other signature algorithm, the program aborts
 var PublicKeyType = func() *CompositeType {
 
 	publicKeyType := &CompositeType{
-		Identifier:         PublicKeyTypeName,
-		Kind:               common.CompositeKindStructure,
-		hasComputedMembers: true,
-		importable:         true,
+		Identifier:                PublicKeyTypeName,
+		Kind:                      common.CompositeKindStructure,
+		hasComputedMembers:        true,
+		ImportableWithoutLocation: true,
 	}
 
 	var members = []*Member{

@@ -23,9 +23,12 @@ import (
 	"encoding/binary"
 	"fmt"
 	"github.com/onflow/cadence"
+	"github.com/onflow/cadence/runtime/ast"
+	"github.com/onflow/cadence/runtime/common"
 	"github.com/onflow/cadence/runtime/sema"
 	"github.com/pkg/errors"
 	"io"
+	"math/big"
 	goRuntime "runtime"
 )
 
@@ -163,6 +166,8 @@ func (e *Encoder) EncodeArray(value cadence.Array) (err error) {
 // Types
 //
 
+// TODO do each of the type encoders need to include their type?
+//      or can they sometimes have a known type?
 func (e *Encoder) EncodeType(t cadence.Type) (err error) {
 	switch actualType := t.(type) {
 	case cadence.VoidType:
@@ -211,7 +216,7 @@ func (e *Encoder) EncodeVariableSizedArrayType(t cadence.VariableSizedArrayType)
 // 2. Its element type, which is one or more bytes.
 // conArrayType := simpleConArrayType elementType length
 func (e *Encoder) EncodeConstantSizedArrayType(t cadence.ConstantSizedArrayType) (err error) {
-	err = e.EncodeSimpleType(EncodedTypeVariableSizeArray)
+	err = e.EncodeSimpleType(EncodedTypeConstantSizeArray)
 	if err != nil { return }
 
 	err = e.EncodeType(t.ElementType)
@@ -252,3 +257,640 @@ const (
 	EncodedTypeVariableSizeArray
 	EncodedTypeConstantSizeArray
 )
+
+//
+// Sema Types
+//
+
+// A SemaEncoder converts Sema types into custom-encoded bytes.
+type SemaEncoder struct {
+	w          io.Writer
+}
+
+// EncodeSema returns the custom-encoded representation of the given sema type.
+//
+// This function returns an error if the Cadence value cannot be represented in the custom format.
+func EncodeSema(t sema.Type) ([]byte, error) {
+	var w bytes.Buffer
+	enc := NewSemaEncoder(&w)
+
+	err := enc.Encode(t)
+	if err != nil {
+		return nil, err
+	}
+
+	return w.Bytes(), nil
+}
+
+// MustEncodeSema returns the custom-encoded representation of the given sema type, or panics
+// if the sema type cannot be represented in the custom format.
+func MustEncodeSema(value cadence.Value) []byte {
+	b, err := Encode(value)
+	if err != nil {
+		panic(err)
+	}
+	return b
+}
+
+// NewSemaEncoder initializes a SemaEncoder that will write custom-encoded bytes to the
+// given io.Writer.
+func NewSemaEncoder(w io.Writer) *SemaEncoder {
+	return &SemaEncoder{w: w}
+}
+
+// Encode writes the custom-encoded representation of the given sema type to this
+// encoder's io.Writer.
+//
+// This function returns an error if the given sema type is not supported
+// by this encoder.
+func (e *SemaEncoder) Encode(t sema.Type) (err error) {
+	// capture panics that occur during struct preparation
+	defer func() {
+		if r := recover(); r != nil {
+			// don't recover Go errors
+			goErr, ok := r.(goRuntime.Error)
+			if ok {
+				panic(goErr)
+			}
+
+			panicErr, isError := r.(error)
+			if !isError {
+				panic(r)
+			}
+
+			err = fmt.Errorf("failed to encode value: %w", panicErr)
+		}
+	}()
+
+	return e.EncodeType(t)
+}
+
+// EncodeType encodes any supported sema.Type.
+func (e *SemaEncoder) EncodeType(t sema.Type) (err error) {
+
+	err = e.EncodeTypeIdentifier(t)
+	if err != nil { return }
+
+	// TODO more types
+
+	switch concreteType := t.(type) {
+	case *sema.CompositeType:
+		return e.EncodeCompositeType(concreteType)
+	case sema.ValueIndexableType:
+		panic("TODO")
+	case sema.ContainedType:
+		panic("TODO")
+	case sema.ContainerType:
+		panic("TODO")
+	case sema.CompositeKindedType:
+		panic("TODO")
+	case sema.LocatedType:
+		panic("TODO")
+	case sema.ParameterizedType:
+		panic("TODO")
+	case *sema.OptionalType:
+		return e.EncodeOptionalType(concreteType)
+	case *sema.GenericType:
+		return e.EncodeGenericType(concreteType)
+	case sema.IntegerRangedType:
+		return e.EncodeIntegerRangedType(concreteType)
+	case sema.FractionalRangedType:
+		return e.EncodeFractionalRangedType(concreteType)
+	case sema.SaturatingArithmeticType:
+		panic("TODO")
+	case sema.ArrayType:
+		return e.EncodeArrayType(concreteType)
+	case *sema.FunctionType:
+		panic("TODO")
+	case *sema.DictionaryType:
+		panic("TODO")
+	case *sema.ReferenceType:
+		panic("TODO")
+	case *sema.AddressType:
+		return // type is an empty struct
+	case *sema.TransactionType:
+		panic("TODO")
+	case *sema.RestrictedType:
+		panic("TODO")
+	case *sema.CapabilityType:
+		panic("TODO")
+		// TODO more types
+	default:
+		return errors.Errorf("Unexpected type: %s", concreteType)
+	}
+}
+
+func (e *SemaEncoder) EncodeArrayType(t sema.ArrayType) (err error) {
+	// TODO more types?
+	switch concreteType := t.(type) {
+	case *sema.VariableSizedType:
+		return e.EncodeVariableSizedType(concreteType)
+	case *sema.ConstantSizedType:
+		return e.EncodeConstantSizedType(concreteType)
+	}
+}
+
+func (e *SemaEncoder) EncodeOptionalType(t *sema.OptionalType) (err error) {
+	return e.EncodeType(t.Type)
+}
+
+func (e *SemaEncoder) EncodeVariableSizedType(t *sema.VariableSizedType) (err error) {
+	return e.EncodeType(t.Type)
+}
+
+func (e *SemaEncoder) EncodeConstantSizedType(t *sema.ConstantSizedType) (err error) {
+	err = e.EncodeType(t.Type)
+	if err != nil { return }
+
+	return e.EncodeInt64(t.Size)
+}
+
+func (e *SemaEncoder) EncodeGenericType(t *sema.GenericType) (err error) {
+	return e.EncodeTypeParameter(t.TypeParameter)
+}
+
+func (e *SemaEncoder) EncodeIntegerRangedType(t sema.IntegerRangedType) (err error) {
+	// TODO more types?
+	// TODO encode more concrete types instead? like cadence's Int16
+	switch concreteType := t.(type) {
+	case *sema.NumericType:
+		return e.EncodeNumericType(concreteType)
+	default:
+		return errors.Errorf("Unexpected integer ranged type: %s", concreteType)
+	}
+}
+
+func (e *SemaEncoder) EncodeNumericType(t *sema.NumericType) (err error) {
+	// name -> string
+	err = e.EncodeString(t.QualifiedString())
+	if err != nil { return }
+
+	err = e.EncodeTypeTag(t.Tag())
+	if err != nil { return }
+
+	err = e.EncodeBigInt(t.MinInt())
+	if err != nil { return }
+
+	err = e.EncodeBigInt(t.MaxInt())
+	if err != nil { return }
+
+	err = e.EncodeBool(t.SupportsSaturatingAdd())
+	if err != nil { return }
+
+	err = e.EncodeBool(t.SupportsSaturatingSubtract())
+	if err != nil { return }
+
+	err = e.EncodeBool(t.SupportsSaturatingMultiply())
+	if err != nil { return }
+
+	err = e.EncodeBool(t.SupportsSaturatingDivide())
+	if err != nil { return }
+
+	return e.EncodeBool(t.IsSuperType())
+}
+
+func (e *SemaEncoder) EncodeFractionalRangedType(t sema.FractionalRangedType) (err error) {
+	// TODO more types?
+	// TODO encode more concrete types instead? like cadence's Fix64
+	switch concreteType := t.(type) {
+	case *sema.FixedPointNumericType:
+		return e.EncodeFixedPointNumericType(concreteType)
+	default:
+		return errors.Errorf("Unexpected fractional ranged type: %s", concreteType)
+	}
+}
+
+func (e *SemaEncoder) EncodeFixedPointNumericType(t *sema.FixedPointNumericType) (err error) {
+	// name -> string
+	err = e.EncodeString(t.QualifiedString())
+	if err != nil { return }
+
+	err = e.EncodeTypeTag(t.Tag())
+	if err != nil { return }
+
+	err = e.EncodeUInt64(uint64(t.Scale()))
+	if err != nil { return }
+
+	err = e.EncodeBigInt(t.MinInt())
+	if err != nil { return }
+
+	err = e.EncodeBigInt(t.MaxInt())
+	if err != nil { return }
+
+	err = e.EncodeBool(t.SupportsSaturatingAdd())
+	if err != nil { return }
+
+	err = e.EncodeBool(t.SupportsSaturatingSubtract())
+	if err != nil { return }
+
+	err = e.EncodeBool(t.SupportsSaturatingMultiply())
+	if err != nil { return }
+
+	err = e.EncodeBool(t.SupportsSaturatingDivide())
+	if err != nil { return }
+
+	return e.EncodeBool(t.IsSuperType())
+}
+
+func (e *SemaEncoder) EncodeBigInt(bi *big.Int) (err error) {
+	sign := bi.Sign()
+	neg := sign == -1
+	err = e.EncodeBool(neg)
+	if err != nil { return }
+
+	return e.EncodeBytes(bi.Bytes())
+}
+
+func (e *SemaEncoder) EncodeTypeTag(tag sema.TypeTag) (err error) {
+	err = e.EncodeUInt64(tag.UpperMask())
+	if err != nil { return }
+
+	return e.EncodeUInt64(tag.LowerMask())
+}
+
+// TODO can I use TypeTag instead? runtime/sema/type_tags.go:32
+type EncodedSema byte
+
+const (
+	EncodedSemaUnknown EncodedSema = iota
+	EncodedSemaCompositeType
+	EncodedSemaOptionalType
+	EncodedSemaGenericType
+	EncodedSemaNumericType
+	EncodedSemaFixedPointNumericType
+	EncodedSemaVariableSizedType
+	EncodedSemaConstantSizedType
+)
+
+func (e *SemaEncoder) EncodeTypeIdentifier(t sema.Type) (err error) {
+	id := EncodedSemaUnknown
+	switch concreteType := t.(type) {
+	case *sema.CompositeType:
+		id = EncodedSemaCompositeType
+	case *sema.OptionalType:
+		id = EncodedSemaOptionalType
+	case *sema.GenericType:
+		id = EncodedSemaGenericType
+	case *sema.NumericType:
+		id = EncodedSemaNumericType
+	case *sema.FixedPointNumericType:
+		id = EncodedSemaFixedPointNumericType
+	case *sema.VariableSizedType:
+		id = EncodedSemaVariableSizedType
+	case *sema.ConstantSizedType:
+		id = EncodedSemaConstantSizedType
+	default:
+		return errors.Errorf("Unexpected type: %s", concreteType)
+	}
+
+	return e.write([]byte{byte(id)})
+}
+
+// TODO are composite types encodable is CompositeType.IsStorable() is false?
+// TODO if IsImportable is false then do we want to skip for execution state storage?
+func (e *SemaEncoder) EncodeCompositeType(compositeType *sema.CompositeType) (err error) {
+	// Location -> common.Location
+	err = e.EncodeLocation(compositeType.Location)
+	if err != nil { return }
+
+	// Identifier -> string
+	err = e.EncodeString(compositeType.Identifier)
+	if err != nil { return }
+
+	// Kind -> common.CompositeKind
+	err = e.EncodeUInt64(uint64(compositeType.Kind))
+	if err != nil { return }
+
+	// ExplicitInterfaceConformances -> []*InterfaceType
+	err = e.EncodeLength(len(compositeType.ExplicitInterfaceConformances))
+	if err != nil { return }
+	for _, interfaceType := range compositeType.ExplicitInterfaceConformances {
+		err = e.EncodeInterfaceType(interfaceType)
+		if err != nil { return }
+	}
+
+	// ImplicitTypeRequirementConformances -> []*CompositeType
+	err = e.EncodeLength(len(compositeType.ImplicitTypeRequirementConformances))
+	if err != nil { return }
+	for _, conf := range compositeType.ImplicitTypeRequirementConformances {
+		err = e.EncodeCompositeType(conf)
+		if err != nil { return }
+	}
+
+	// Members -> *StringMemberOrderedMap
+	err = e.EncodeStringMemberOrderedMap(compositeType.Members)
+	if err != nil { return }
+
+	// Fields -> []string
+	err = e.EncodeLength(len(compositeType.Fields))
+	if err != nil { return }
+	for _, s := range compositeType.Fields {
+		err = e.EncodeString(s)
+		if err != nil { return }
+	}
+
+	// ConstructorParameters -> []*Parameter
+	err = e.EncodeLength(len(compositeType.ConstructorParameters))
+	if err != nil { return }
+	for _, parameter := range compositeType.ConstructorParameters {
+		err = e.EncodeParameter(parameter)
+		if err != nil { return }
+	}
+
+	// nestedTypes -> *StringTypeOrderedMap
+	err = e.EncodeStringTypeOrderedMap(compositeType.GetNestedTypes())
+	if err != nil { return }
+
+	// containerType -> Type
+	err = e.EncodeType(compositeType.GetContainerType())
+	if err != nil { return }
+
+	// EnumRawType -> Type
+	err = e.EncodeType(compositeType.EnumRawType)
+	if err != nil { return }
+
+	// TODO? hasComputedMembers    bool
+
+	// ImportableWithoutLocation -> bool
+	return e.EncodeBool(compositeType.ImportableWithoutLocation)
+}
+
+
+func (e *SemaEncoder) EncodeTypeParameter(p *sema.TypeParameter) (err error) {
+	err = e.EncodeString(p.Name)
+	if err != nil { return }
+
+	err = e.EncodeType(p.TypeBound)
+	if err != nil { return }
+
+	return e.EncodeBool(p.Optional)
+}
+
+func (e *SemaEncoder) EncodeParameter(parameter *sema.Parameter) (err error) {
+	err = e.EncodeString(parameter.Label)
+	if err != nil { return }
+
+	err = e.EncodeString(parameter.Identifier)
+	if err != nil { return }
+
+	return e.EncodeTypeAnnotation(parameter.TypeAnnotation)
+}
+
+func (e *SemaEncoder) EncodeStringMemberOrderedMap(om *sema.StringMemberOrderedMap) (err error) {
+	err = e.EncodeLength(om.Len())
+	if err != nil { return }
+
+	return om.ForeachWithError(func(key string, value *sema.Member) error {
+		if value.IgnoreInSerialization {
+			return nil
+		}
+
+		err := e.EncodeString(key)
+		if err != nil { return err }
+
+		return e.EncodeMember(value)
+	})
+}
+
+func (e *SemaEncoder) EncodeStringTypeOrderedMap(om *sema.StringTypeOrderedMap) (err error) {
+	err = e.EncodeLength(om.Len())
+	if err != nil { return }
+
+	return om.ForeachWithError(func(key string, t sema.Type) error {
+		err := e.EncodeString(key)
+		if err != nil { return err }
+
+		return e.EncodeType(t)
+	})
+}
+
+func (e *SemaEncoder) EncodeMember(member *sema.Member) (err error) {
+	err = e.EncodeType(member.ContainerType)
+	if err != nil { return }
+
+	err = e.EncodeUInt64(uint64(member.Access))
+	if err != nil { return }
+
+	err = e.EncodeAstIdentifier(member.Identifier)
+	if err != nil { return }
+
+	err = e.EncodeTypeAnnotation(member.TypeAnnotation)
+	if err != nil { return }
+
+	err = e.EncodeUInt64(uint64(member.DeclarationKind))
+	if err != nil { return }
+
+	err = e.EncodeUInt64(uint64(member.VariableKind))
+	if err != nil { return }
+
+	err = e.EncodeLength(len(member.ArgumentLabels))
+	if err != nil { return }
+	for _, s := range member.ArgumentLabels {
+		err = e.EncodeString(s)
+		if err != nil { return }
+	}
+
+	err = e.EncodeBool(member.Predeclared)
+	if err != nil { return }
+
+	return e.EncodeString(member.DocString)
+}
+
+func (e *SemaEncoder) EncodeTypeAnnotation(anno *sema.TypeAnnotation) (err error) {
+	err = e.EncodeBool(anno.IsResource)
+	if err != nil { return }
+
+	return e.EncodeType(anno.Type)
+}
+
+func (e *SemaEncoder) EncodeAstIdentifier(id ast.Identifier) (err error) {
+	err = e.EncodeString(id.Identifier)
+	if err != nil { return }
+
+	return e.EncodeAstPosition(id.Pos)
+}
+
+func (e *SemaEncoder) EncodeAstPosition(pos ast.Position) (err error) {
+	err = e.EncodeInt64(int64(pos.Offset))
+	if err != nil { return }
+
+	err = e.EncodeInt64(int64(pos.Line))
+	if err != nil { return }
+
+	return e.EncodeInt64(int64(pos.Column))
+}
+
+func (e *SemaEncoder) EncodeInterfaceType(interfaceType *sema.InterfaceType) (err error) {
+	err = e.EncodeLocation(interfaceType.Location)
+	if err != nil { return }
+
+	err = e.EncodeString(interfaceType.Identifier)
+	if err != nil { return }
+
+	err = e.EncodeUInt64(uint64(interfaceType.CompositeKind))
+	if err != nil { return }
+
+	err = e.EncodeStringMemberOrderedMap(interfaceType.Members)
+	if err != nil { return }
+
+	err = e.EncodeLength(len(interfaceType.Fields))
+	if err != nil { return }
+	for _, s := range interfaceType.Fields {
+		err = e.EncodeString(s)
+		if err != nil { return }
+	}
+
+	err = e.EncodeLength(len(interfaceType.InitializerParameters))
+	if err != nil { return }
+	for _, parameter := range interfaceType.InitializerParameters {
+		err = e.EncodeParameter(parameter)
+		if err != nil { return }
+	}
+
+	err = e.EncodeType(interfaceType.GetContainerType())
+	if err != nil { return }
+
+	return e.EncodeStringTypeOrderedMap(interfaceType.GetNestedTypes())
+}
+
+func (e *SemaEncoder) EncodeBool(boolean bool) (err error) {
+	b := []byte{0}
+	if boolean {
+		b[0] = 1
+	}
+	return e.write(b)
+}
+
+// TODO use a more efficient encoder than `binary` (they say to in their top source comment)
+func (e *SemaEncoder) EncodeUInt64(i uint64) (err error) {
+	return binary.Write(e.w, binary.LittleEndian, i)
+}
+
+func (e *SemaEncoder) EncodeInt64(i int64) (err error) {
+	return binary.Write(e.w, binary.LittleEndian, i)
+}
+
+func (e *SemaEncoder) EncodeInt32(i int32) (err error) {
+	return binary.Write(e.w, binary.LittleEndian, i)
+}
+
+func (e *SemaEncoder) EncodeLocation(t common.Location) (err error) {
+	switch concreteType := t.(type) {
+	case common.AddressLocation:
+		return e.EncodeAddressLocation(concreteType)
+	case common.IdentifierLocation:
+		return e.EncodeIdentifierLocation(concreteType)
+	case common.ScriptLocation:
+		return e.EncodeScriptLocation(concreteType)
+	case common.StringLocation:
+		return e.EncodeStringLocation(concreteType)
+	case common.TransactionLocation:
+		return e.EncodeTransactionLocation(concreteType)
+	case common.REPLLocation:
+		return e.EncodeREPLLocation()
+	default:
+		return errors.Errorf("Unexpected loation type: %s", concreteType)
+	}
+}
+
+// The location prefixes are stored as strings but are always* a single ascii character,
+// so they can be stored in a single byte.
+// * The exception is the REPL location but its first ascii character is unique anyway.
+func (e *SemaEncoder) EncodeLocationPrefix(prefix string) (err error) {
+	char := prefix[0]
+	return e.write([]byte{char})
+}
+
+func (e *SemaEncoder) EncodeAddressLocation(t common.AddressLocation) (err error) {
+	err = e.EncodeLocationPrefix(common.AddressLocationPrefix)
+	if err != nil { return }
+
+	err = e.EncodeAddress(t.Address)
+	if err != nil { return }
+
+	return e.EncodeString(t.Name)
+}
+
+func (e *SemaEncoder) EncodeIdentifierLocation(t common.IdentifierLocation) (err error) {
+	err = e.EncodeLocationPrefix(common.IdentifierLocationPrefix)
+	if err != nil { return }
+
+	return e.EncodeString(string(t))
+}
+
+func (e *SemaEncoder) EncodeScriptLocation(t common.ScriptLocation) (err error) {
+	err = e.EncodeLocationPrefix(common.ScriptLocationPrefix)
+	if err != nil { return }
+
+	return e.EncodeBytes(t)
+}
+
+func (e *SemaEncoder) EncodeStringLocation(t common.StringLocation) (err error) {
+	err = e.EncodeLocationPrefix(common.StringLocationPrefix)
+	if err != nil { return }
+
+	return e.EncodeString(string(t))
+}
+
+func (e *SemaEncoder) EncodeTransactionLocation(t common.TransactionLocation) (err error) {
+	err = e.EncodeLocationPrefix(common.TransactionLocationPrefix)
+	if err != nil { return }
+
+	return e.EncodeBytes(t)
+}
+
+func (e *SemaEncoder) EncodeREPLLocation() (err error) {
+	return e.EncodeLocationPrefix(common.REPLLocationPrefix)
+}
+
+// TODO need to do anything to handle full range of possible runes?
+func (e *SemaEncoder) EncodeString(s string) (err error) {
+	err = e.EncodeLength(len(s))
+	if err != nil { return }
+
+	for _, c := range s {
+		err = e.EncodeCharacter(c)
+		if err != nil { return }
+	}
+
+	return
+}
+
+// EncodeBytes encodes byte arrays.
+func (e *SemaEncoder) EncodeBytes(bytes []byte) (err error) {
+	err = e.EncodeLength(len(bytes))
+	if err != nil { return }
+
+	return e.write(bytes)
+}
+
+func (e *SemaEncoder) EncodeCharacter(c rune) (err error) {
+	return e.EncodeInt32(c)
+}
+
+// EncodeLength encodes a non-negative length as a uint32.
+// It uses 4 bytes.
+func (e *SemaEncoder) EncodeLength(length int) (err error) {
+	if length < 0 { // TODO is this safety check useful?
+		return errors.Errorf("Cannot encode length below zero: %d", length)
+	}
+
+	// TODO is type conversion safe here?
+	// TODO could type conversion be done cheaper since length is for sure positive?
+	l := uint32(length)
+	blob := make([]byte, 4)
+	binary.LittleEndian.PutUint32(blob, l)
+
+	_, err = e.w.Write(blob)
+
+	return
+}
+
+func (e *SemaEncoder) EncodeAddress(address common.Address) (err error) {
+	return e.write(address[:])
+}
+
+func (e *SemaEncoder) write(b []byte) (err error) {
+	_, err = e.w.Write(b)
+	return
+}

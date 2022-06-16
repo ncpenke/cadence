@@ -24,6 +24,7 @@ import (
 	"github.com/onflow/cadence/runtime/common"
 )
 
+// TODO ROBERT this is the type the json encoder uses
 type Type interface {
 	isType()
 	ID() string
