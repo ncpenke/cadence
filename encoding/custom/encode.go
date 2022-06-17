@@ -258,7 +258,7 @@ const (
 )
 
 //
-// Sema Types
+// Sema
 //
 
 // A SemaEncoder converts Sema types into custom-encoded bytes.
@@ -379,6 +379,8 @@ func (e *SemaEncoder) EncodeType(t sema.Type) (err error) {
 	}
 }
 
+// TODO should each instantiated simple type have an enum associated with it?
+//      much much much smaller than encoding the entire SimpleType struct
 func (e *SemaEncoder) EncodeSimpleType(t *sema.SimpleType) (err error) {
 	err = e.EncodeString(t.Name)
 	if err != nil { return }
@@ -449,19 +451,11 @@ func (e *SemaEncoder) EncodeFunctionType(t *sema.FunctionType) (err error) {
 	err = e.EncodeBool(t.IsConstructor)
 	if err != nil { return }
 
-	err = e.EncodeLength(len(t.TypeParameters))
+	err = EncodeArray(e, t.TypeParameters, e.EncodeTypeParameter)
 	if err != nil { return }
-	for _, p := range t.TypeParameters {
-		err = e.EncodeTypeParameter(p)
-		if err != nil { return }
-	}
 
-	err = e.EncodeLength(len(t.Parameters))
+	err = EncodeArray(e, t.Parameters, e.EncodeParameter)
 	if err != nil { return }
-	for _, p := range t.Parameters {
-		err = e.EncodeParameter(p)
-		if err != nil { return }
-	}
 
 	err = e.EncodeTypeAnnotation(t.ReturnTypeAnnotation)
 	if err != nil { return }
@@ -492,42 +486,20 @@ func (e *SemaEncoder) EncodeTransactionType(t *sema.TransactionType) (err error)
 	err = e.EncodeStringMemberOrderedMap(t.Members)
 	if err != nil { return }
 
-	err = e.EncodeLength(len(t.Fields))
+	err = EncodeArray(e, t.Fields, e.EncodeString)
 	if err != nil { return }
-	for _, field := range t.Fields {
-		err = e.EncodeString(field)
-		if err != nil { return }
-	}
 
-	err = e.EncodeLength(len(t.PrepareParameters))
+	err = EncodeArray(e, t.PrepareParameters, e.EncodeParameter)
 	if err != nil { return }
-	for _, p := range t.PrepareParameters {
-		err = e.EncodeParameter(p)
-		if err != nil { return }
-	}
 
-	err = e.EncodeLength(len(t.Parameters))
-	if err != nil { return }
-	for _, p := range t.Parameters {
-		err = e.EncodeParameter(p)
-		if err != nil { return }
-	}
-
-	return
+	return EncodeArray(e, t.Parameters, e.EncodeParameter)
 }
 
 func (e *SemaEncoder) EncodeRestrictedType(t *sema.RestrictedType) (err error) {
 	err = e.EncodeType(t.Type)
 	if err != nil { return }
 
-	err = e.EncodeLength(len(t.Restrictions))
-	if err != nil { return }
-	for _, inter := range t.Restrictions {
-		err = e.EncodeInterfaceType(inter)
-		if err != nil { return }
-	}
-
-	return
+	return EncodeArray(e, t.Restrictions, e.EncodeInterfaceType)
 }
 
 func (e *SemaEncoder) EncodeCapabilityType(t *sema.CapabilityType) (err error) {
@@ -740,40 +712,24 @@ func (e *SemaEncoder) EncodeCompositeType(compositeType *sema.CompositeType) (er
 	if err != nil { return }
 
 	// ExplicitInterfaceConformances -> []*InterfaceType
-	err = e.EncodeLength(len(compositeType.ExplicitInterfaceConformances))
+	err = EncodeArray(e, compositeType.ExplicitInterfaceConformances, e.EncodeInterfaceType)
 	if err != nil { return }
-	for _, interfaceType := range compositeType.ExplicitInterfaceConformances {
-		err = e.EncodeInterfaceType(interfaceType)
-		if err != nil { return }
-	}
 
 	// ImplicitTypeRequirementConformances -> []*CompositeType
-	err = e.EncodeLength(len(compositeType.ImplicitTypeRequirementConformances))
+	err = EncodeArray(e, compositeType.ImplicitTypeRequirementConformances, e.EncodeCompositeType)
 	if err != nil { return }
-	for _, conf := range compositeType.ImplicitTypeRequirementConformances {
-		err = e.EncodeCompositeType(conf)
-		if err != nil { return }
-	}
 
 	// Members -> *StringMemberOrderedMap
 	err = e.EncodeStringMemberOrderedMap(compositeType.Members)
 	if err != nil { return }
 
 	// Fields -> []string
-	err = e.EncodeLength(len(compositeType.Fields))
+	err = EncodeArray(e, compositeType.Fields, e.EncodeString)
 	if err != nil { return }
-	for _, s := range compositeType.Fields {
-		err = e.EncodeString(s)
-		if err != nil { return }
-	}
 
 	// ConstructorParameters -> []*Parameter
-	err = e.EncodeLength(len(compositeType.ConstructorParameters))
+	err = EncodeArray(e, compositeType.ConstructorParameters, e.EncodeParameter)
 	if err != nil { return }
-	for _, parameter := range compositeType.ConstructorParameters {
-		err = e.EncodeParameter(parameter)
-		if err != nil { return }
-	}
 
 	// nestedTypes -> *StringTypeOrderedMap
 	err = e.EncodeStringTypeOrderedMap(compositeType.GetNestedTypes())
@@ -869,12 +825,8 @@ func (e *SemaEncoder) EncodeMember(member *sema.Member) (err error) {
 	err = e.EncodeUInt64(uint64(member.VariableKind))
 	if err != nil { return }
 
-	err = e.EncodeLength(len(member.ArgumentLabels))
+	err = EncodeArray(e, member.ArgumentLabels, e.EncodeString)
 	if err != nil { return }
-	for _, s := range member.ArgumentLabels {
-		err = e.EncodeString(s)
-		if err != nil { return }
-	}
 
 	err = e.EncodeBool(member.Predeclared)
 	if err != nil { return }
@@ -919,19 +871,11 @@ func (e *SemaEncoder) EncodeInterfaceType(interfaceType *sema.InterfaceType) (er
 	err = e.EncodeStringMemberOrderedMap(interfaceType.Members)
 	if err != nil { return }
 
-	err = e.EncodeLength(len(interfaceType.Fields))
+	err = EncodeArray(e, interfaceType.Fields, e.EncodeString)
 	if err != nil { return }
-	for _, s := range interfaceType.Fields {
-		err = e.EncodeString(s)
-		if err != nil { return }
-	}
 
-	err = e.EncodeLength(len(interfaceType.InitializerParameters))
+	err = EncodeArray(e, interfaceType.InitializerParameters, e.EncodeParameter)
 	if err != nil { return }
-	for _, parameter := range interfaceType.InitializerParameters {
-		err = e.EncodeParameter(parameter)
-		if err != nil { return }
-	}
 
 	err = e.EncodeType(interfaceType.GetContainerType())
 	if err != nil { return }
@@ -960,8 +904,8 @@ func (e *SemaEncoder) EncodeInt32(i int32) (err error) {
 	return binary.Write(e.w, binary.LittleEndian, i)
 }
 
-func (e *SemaEncoder) EncodeLocation(t common.Location) (err error) {
-	switch concreteType := t.(type) {
+func (e *SemaEncoder) EncodeLocation(location common.Location) (err error) {
+	switch concreteType := location.(type) {
 	case common.AddressLocation:
 		return e.EncodeAddressLocation(concreteType)
 	case common.IdentifierLocation:
@@ -975,7 +919,7 @@ func (e *SemaEncoder) EncodeLocation(t common.Location) (err error) {
 	case common.REPLLocation:
 		return e.EncodeREPLLocation()
 	default:
-		return fmt.Errorf("Unexpected loation type: %s", concreteType)
+		return fmt.Errorf("unexpected loation type: %s", concreteType)
 	}
 }
 
@@ -1029,20 +973,12 @@ func (e *SemaEncoder) EncodeREPLLocation() (err error) {
 	return e.EncodeLocationPrefix(common.REPLLocationPrefix)
 }
 
-// TODO need to do anything to handle full range of possible runes?
+// EncodeString encodes a string as a byte array.
 func (e *SemaEncoder) EncodeString(s string) (err error) {
-	err = e.EncodeLength(len(s))
-	if err != nil { return }
-
-	for _, c := range s {
-		err = e.EncodeCharacter(c)
-		if err != nil { return }
-	}
-
-	return
+	return e.EncodeBytes([]byte(s))
 }
 
-// EncodeBytes encodes byte arrays.
+// EncodeBytes encodes a byte array.
 func (e *SemaEncoder) EncodeBytes(bytes []byte) (err error) {
 	err = e.EncodeLength(len(bytes))
 	if err != nil { return }
@@ -1050,6 +986,7 @@ func (e *SemaEncoder) EncodeBytes(bytes []byte) (err error) {
 	return e.write(bytes)
 }
 
+// TODO is this useful?
 func (e *SemaEncoder) EncodeCharacter(c rune) (err error) {
 	return e.EncodeInt32(c)
 }
@@ -1058,7 +995,7 @@ func (e *SemaEncoder) EncodeCharacter(c rune) (err error) {
 // It uses 4 bytes.
 func (e *SemaEncoder) EncodeLength(length int) (err error) {
 	if length < 0 { // TODO is this safety check useful?
-		return fmt.Errorf("Cannot encode length below zero: %d", length)
+		return fmt.Errorf("cannot encode length below zero: %d", length)
 	}
 
 	// TODO is type conversion safe here?
@@ -1079,4 +1016,14 @@ func (e *SemaEncoder) EncodeAddress(address common.Address) (err error) {
 func (e *SemaEncoder) write(b []byte) (err error) {
 	_, err = e.w.Write(b)
 	return
-}v
+}
+
+func EncodeArray[T any](e *SemaEncoder, arr []T, encodeFn func(T) error) (err error) {
+	err = e.EncodeLength(len(arr))
+	if err != nil { return }
+	for _, element := range arr {
+		err = encodeFn(element)
+		if err != nil { return }
+	}
+	return
+}

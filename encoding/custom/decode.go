@@ -22,6 +22,7 @@ import (
 	"bytes"
 	"encoding/binary"
 	"fmt"
+	"github.com/onflow/cadence/runtime/sema"
 	"io"
 
 	"github.com/onflow/cadence"
@@ -242,5 +243,228 @@ func (d *Decoder) DecodeLength() (l int, err error) {
 func (d *Decoder) read(howManyBytes int) (b []byte, err error) {
 	b = make([]byte, howManyBytes)
 	_, err = d.r.Read(b)
+	return
+}
+
+//
+// Sema
+//
+
+
+// A SemaDecoder decodes custom-encoded representations of Cadence values.
+type SemaDecoder struct {
+	r io.Reader
+	memoryGauge common.MemoryGauge
+}
+
+// Decode returns a Cadence value decoded from its custom-encoded representation.
+//
+// This function returns an error if the bytes represent a custom encoding that
+// is malformed, does not conform to the custom Cadence specification, or contains
+// an unknown composite type.
+func DecodeSema(gauge common.MemoryGauge, b []byte) (cadence.Value, error) {
+	r := bytes.NewReader(b)
+	dec := NewSemaDecoder(gauge, r)
+
+	v, err := dec.Decode()
+	if err != nil {
+		return nil, err
+	}
+
+	return v, nil
+}
+
+// NewSemaDecoder initializes a SemaDecoder that will decode custom-encoded bytes from the
+// given io.Reader.
+func NewSemaDecoder(memoryGauge common.MemoryGauge, r io.Reader) *Decoder {
+	return &Decoder{
+		r: r,
+		memoryGauge: memoryGauge,
+	}
+}
+
+// Decode reads custom-encoded bytes from the io.Reader and decodes them to a
+// Sema type. There is no assumption about the top-level Sema type so the first
+// byte must specify the top-level type. Usually this will be a CompositeType.
+//
+// This function returns an error if the bytes represent a custom encoding that
+// is malformed, does not conform to the custom specification, or contains
+// an unknown composite type.
+func (d *SemaDecoder) Decode() (err error) {
+	// capture panics that occur during decoding
+	defer func() {
+		if r := recover(); r != nil {
+			panicErr, isError := r.(error)
+			if !isError {
+				panic(r)
+			}
+
+			err = fmt.Errorf("failed to decode value: %w", panicErr)
+		}
+	}()
+
+	return d.DecodeType()
+}
+
+func (d *SemaDecoder) DecodeType() (t sema.Type, err error) {
+	typeIdentifier, err := d.DecodeTypeIdentifier()
+	if err != nil { return }
+
+	switch typeIdentifier {
+	case EncodedSemaSimpleType:
+		return d.DecodeSimpleType()
+	case EncodedSemaCompositeType:
+		return d.DecodeCompositeType()
+	// TODO more types
+	default:
+		err = fmt.Errorf("unknown type identifier: %d", typeIdentifier)
+	}
+
+	return
+}
+
+func (d *SemaDecoder) DecodeTypeIdentifier() (id EncodedSema, err error) {
+	b, err := d.read(1)
+	if err != nil { return }
+
+	id = EncodedSema(b[0])
+	return
+}
+
+func (d *SemaDecoder) DecodeSimpleType() (t *sema.SimpleType, err error) {
+	// TODO probably this will be changed to use enums
+	return
+}
+
+func (d *SemaDecoder) DecodeCompositeType() (t *sema.CompositeType, err error) {
+	location, err := d.DecodeLocation()
+	if err != nil { return }
+
+	identifier, err := d.DecodeString()
+	if err != nil { return }
+
+	kind, err := d.DecodeUInt64()
+	if err != nil { return }
+
+	explicitInterfaceConformances, err := DecodeArray(d, d.DecodeInterfaceType)
+	if err != nil { return }
+
+	// TODO more struct fields
+
+	t = &sema.CompositeType{
+		Location:                            location,
+		Identifier:                          identifier,
+		Kind:                                common.CompositeKind(kind),
+		ExplicitInterfaceConformances:       explicitInterfaceConformances,
+		ImplicitTypeRequirementConformances: nil,
+		Members:                             nil,
+		Fields:                              nil,
+		ConstructorParameters:               nil,
+		EnumRawType:                         nil,
+		ImportableWithoutLocation:           false,
+	}
+	return
+}
+
+func (d *SemaDecoder) DecodeInterfaceType() (t *sema.InterfaceType, err error) {
+	// TODO
+
+	t = &sema.InterfaceType{
+		Location:              nil,
+		Identifier:            "",
+		CompositeKind:         0,
+		Members:               nil,
+		Fields:                nil,
+		InitializerParameters: nil,
+	}
+	return
+}
+
+func (d *SemaDecoder) DecodeLocation() (location common.Location, err error) {
+	prefix, err := d.DecodeLocationPrefix()
+
+	switch prefix {
+	case common.AddressLocationPrefix:
+		return d.DecodeAddressLocation()
+    // TODO more locations
+	default:
+		err = fmt.Errorf("unknown location prefix: %s", prefix)
+	}
+	return
+}
+
+func (d *SemaDecoder) DecodeLocationPrefix() (prefix string, err error) {
+	b, err := d.read(1)
+	prefix = string(b)
+	return
+}
+
+func (d *SemaDecoder) DecodeAddressLocation() (location common.AddressLocation, err error) {
+	address, err := d.DecodeAddress()
+	if err != nil { return }
+
+	name, err := d.DecodeString()
+	if err != nil { return }
+
+	location = common.NewAddressLocation(d.memoryGauge, address, name)
+
+	return
+}
+
+func (d *SemaDecoder) DecodeAddress() (address common.Address, err error) {
+	byteArray, err := d.read(common.AddressLength)
+	if err != nil { return }
+
+	for i, b := range byteArray {
+		address[i] = b
+	}
+
+	return
+}
+
+func (d *SemaDecoder) DecodeString() (s string, err error) {
+	b, err := d.DecodeBytes()
+	if err != nil { return }
+
+	s = string(b)
+	return
+}
+
+func (d *SemaDecoder) DecodeBytes() (bytes []byte, err error) {
+	length, err := d.DecodeLength()
+	if err != nil { return }
+
+	return d.read(length)
+}
+
+func (d *SemaDecoder) DecodeLength() (length int, err error) {
+	b, err := d.read(4)
+	if err != nil { return }
+
+	asUint32 := binary.LittleEndian.Uint32(b)
+	length = int(asUint32)
+	return
+}
+
+func (d *SemaDecoder) DecodeUInt64() (u uint64, err error) {
+	err = binary.Read(d.r, binary.LittleEndian, &u)
+}
+
+func (d *SemaDecoder) read(howManyBytes int) (b []byte, err error) {
+	b = make([]byte, howManyBytes)
+	_, err = d.r.Read(b)
+	return
+}
+
+func DecodeArray[T any](d *SemaDecoder, decodeFn func() (T, error)) (arr []T, err error) {
+	length, err := d.DecodeLength()
+
+	arr = make([]T, length)
+	for i := 0; i < length; i++ {
+		element, err := decodeFn()
+		arr[i] = element
+		if err != nil { return }
+	}
+
 	return
 }
