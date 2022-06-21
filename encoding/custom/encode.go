@@ -443,7 +443,7 @@ func (e *SemaEncoder) EncodeArrayType(t sema.ArrayType) (err error) {
 	case *sema.ConstantSizedType:
 		return e.EncodeConstantSizedType(concreteType)
 	default:
-		return fmt.Errorf("Unexpected array type: %s", concreteType)
+		return fmt.Errorf("unexpected array type: %s", concreteType)
 	}
 }
 
@@ -538,6 +538,7 @@ func (e *SemaEncoder) EncodeIntegerRangedType(t sema.IntegerRangedType) (err err
 	}
 }
 
+// TODO encode as enum instead? TypeTag does NOT want to be exported...
 func (e *SemaEncoder) EncodeNumericType(t *sema.NumericType) (err error) {
 	err = e.EncodeIsNonNil(t)
 	if err != nil || t == nil { return }
@@ -775,7 +776,13 @@ func (e *SemaEncoder) EncodeStringMemberOrderedMap(om *sema.StringMemberOrderedM
 		return e.EncodeLength(0)
 	}
 
-	err = e.EncodeLength(om.Len())
+	length := 0
+	om.Foreach(func(key string, value *sema.Member) {
+		if !value.IgnoreInSerialization {
+			length++
+		}
+	})
+	err = e.EncodeLength(length)
 	if err != nil { return }
 
 	return om.ForeachWithError(func(key string, value *sema.Member) error {
