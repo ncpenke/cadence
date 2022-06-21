@@ -33,7 +33,7 @@ import (
 
 // An Encoder converts Cadence values into custom-encoded bytes.
 type Encoder struct {
-	w          io.Writer
+	w io.Writer
 }
 
 // Encode returns the custom-encoded representation of the given value.
@@ -127,7 +127,9 @@ func (e *Encoder) EncodeVoid() (err error) {
 // optional := typedValue
 func (e *Encoder) EncodeOptional(value cadence.Optional) (err error) {
 	err = e.EncodeType(value.Value.Type())
-	if err != nil { return }
+	if err != nil {
+		return
+	}
 
 	return e.EncodeValue(value.Value)
 }
@@ -148,14 +150,20 @@ func (e *Encoder) EncodeBool(value cadence.Bool) (err error) {
 // array := length [elements]
 func (e *Encoder) EncodeArray(value cadence.Array) (err error) {
 	err = e.EncodeLength(len(value.Values))
-	if err != nil { return }
+	if err != nil {
+		return
+	}
 
 	for _, element := range value.Values {
 		err = e.EncodeType(element.Type())
-		if err != nil { return err }
+		if err != nil {
+			return err
+		}
 
 		err = e.EncodeValue(element)
-		if err != nil { return err }
+		if err != nil {
+			return err
+		}
 	}
 
 	return
@@ -192,7 +200,9 @@ func (e *Encoder) EncodeSimpleType(t EncodedType) (err error) {
 // optionalType := simpleOptionalType elementType
 func (e *Encoder) EncodeOptionalType(t cadence.OptionalType) (err error) {
 	err = e.EncodeSimpleType(EncodedTypeOptional)
-	if err != nil { return }
+	if err != nil {
+		return
+	}
 
 	return e.EncodeType(t.Type)
 }
@@ -204,7 +214,9 @@ func (e *Encoder) EncodeOptionalType(t cadence.OptionalType) (err error) {
 // varArrayType := simpleVarArrayType elementType
 func (e *Encoder) EncodeVariableSizedArrayType(t cadence.VariableSizedArrayType) (err error) {
 	err = e.EncodeSimpleType(EncodedTypeVariableSizeArray)
-	if err != nil { return }
+	if err != nil {
+		return
+	}
 
 	return e.EncodeType(t.ElementType)
 }
@@ -216,10 +228,14 @@ func (e *Encoder) EncodeVariableSizedArrayType(t cadence.VariableSizedArrayType)
 // conArrayType := simpleConArrayType elementType length
 func (e *Encoder) EncodeConstantSizedArrayType(t cadence.ConstantSizedArrayType) (err error) {
 	err = e.EncodeSimpleType(EncodedTypeConstantSizeArray)
-	if err != nil { return }
+	if err != nil {
+		return
+	}
 
 	err = e.EncodeType(t.ElementType)
-	if err != nil { return }
+	if err != nil {
+		return
+	}
 
 	return e.EncodeLength(int(t.Size))
 }
@@ -263,7 +279,7 @@ const (
 
 // A SemaEncoder converts Sema types into custom-encoded bytes.
 type SemaEncoder struct {
-	w          io.Writer
+	w io.Writer
 }
 
 // EncodeSema returns the custom-encoded representation of the given sema type.
@@ -329,7 +345,9 @@ func (e *SemaEncoder) Encode(t sema.Type) (err error) {
 // ergo it can't be instantiated on decode.
 func (e *SemaEncoder) EncodeType(t sema.Type) (err error) {
 	err = e.EncodeTypeIdentifier(t)
-	if err != nil { return }
+	if err != nil {
+		return
+	}
 
 	switch concreteType := t.(type) {
 	case *sema.SimpleType:
@@ -383,34 +401,54 @@ func (e *SemaEncoder) EncodeType(t sema.Type) (err error) {
 //      much much much smaller than encoding the entire SimpleType struct
 func (e *SemaEncoder) EncodeSimpleType(t *sema.SimpleType) (err error) {
 	err = e.EncodeString(t.Name)
-	if err != nil { return }
+	if err != nil {
+		return
+	}
 
 	err = e.EncodeString(t.QualifiedString())
-	if err != nil { return }
+	if err != nil {
+		return
+	}
 
 	err = e.EncodeString(string(t.TypeID))
-	if err != nil { return }
+	if err != nil {
+		return
+	}
 
 	err = e.EncodeTypeTag(t.Tag())
-	if err != nil { return }
+	if err != nil {
+		return
+	}
 
 	err = e.EncodeBool(t.IsInvalid)
-	if err != nil { return }
+	if err != nil {
+		return
+	}
 
 	err = e.EncodeBool(t.IsResource)
-	if err != nil { return }
+	if err != nil {
+		return
+	}
 
 	err = e.EncodeBool(t.Storable)
-	if err != nil { return }
+	if err != nil {
+		return
+	}
 
 	err = e.EncodeBool(t.Equatable)
-	if err != nil { return }
+	if err != nil {
+		return
+	}
 
 	err = e.EncodeBool(t.ExternallyReturnable)
-	if err != nil { return }
+	if err != nil {
+		return
+	}
 
 	err = e.EncodeBool(t.Importable)
-	if err != nil { return }
+	if err != nil {
+		return
+	}
 
 	// TODO how to handle IsSuperTypeOf?
 	//      should we encode each simple type as an enum?
@@ -419,17 +457,23 @@ func (e *SemaEncoder) EncodeSimpleType(t *sema.SimpleType) (err error) {
 	// TODO Members
 
 	err = e.EncodeStringTypeOrderedMap(t.NestedTypes)
-	if err != nil { return }
+	if err != nil {
+		return
+	}
 
 	return e.EncodeValueIndexingInfo(t.ValueIndexingInfo)
 }
 
 func (e *SemaEncoder) EncodeValueIndexingInfo(info sema.ValueIndexingInfo) (err error) {
 	err = e.EncodeBool(info.IsValueIndexableType)
-	if err != nil { return }
+	if err != nil {
+		return
+	}
 
 	err = e.EncodeBool(info.AllowsValueIndexingAssignment)
-	if err != nil { return }
+	if err != nil {
+		return
+	}
 
 	// TODO ElementType? it's a function, so...
 
@@ -449,19 +493,29 @@ func (e *SemaEncoder) EncodeArrayType(t sema.ArrayType) (err error) {
 
 func (e *SemaEncoder) EncodeFunctionType(t *sema.FunctionType) (err error) {
 	err = e.EncodeBool(t.IsConstructor)
-	if err != nil { return }
+	if err != nil {
+		return
+	}
 
 	err = EncodeArray(e, t.TypeParameters, e.EncodeTypeParameter)
-	if err != nil { return }
+	if err != nil {
+		return
+	}
 
 	err = EncodeArray(e, t.Parameters, e.EncodeParameter)
-	if err != nil { return }
+	if err != nil {
+		return
+	}
 
 	err = e.EncodeTypeAnnotation(t.ReturnTypeAnnotation)
-	if err != nil { return }
+	if err != nil {
+		return
+	}
 
 	err = e.EncodeInt64(int64(*t.RequiredArgumentCount))
-	if err != nil { return }
+	if err != nil {
+		return
+	}
 
 	// TODO can ArgumentExpressionCheck by omitted?
 
@@ -470,34 +524,46 @@ func (e *SemaEncoder) EncodeFunctionType(t *sema.FunctionType) (err error) {
 
 func (e *SemaEncoder) EncodeDictionaryType(t *sema.DictionaryType) (err error) {
 	err = e.EncodeType(t.KeyType)
-	if err != nil { return }
+	if err != nil {
+		return
+	}
 
 	return e.EncodeType(t.ValueType)
 }
 
 func (e *SemaEncoder) EncodeReferenceType(t *sema.ReferenceType) (err error) {
 	err = e.EncodeBool(t.Authorized)
-	if err != nil { return }
+	if err != nil {
+		return
+	}
 
 	return e.EncodeType(t.Type)
 }
 
 func (e *SemaEncoder) EncodeTransactionType(t *sema.TransactionType) (err error) {
 	err = e.EncodeStringMemberOrderedMap(t.Members)
-	if err != nil { return }
+	if err != nil {
+		return
+	}
 
 	err = EncodeArray(e, t.Fields, e.EncodeString)
-	if err != nil { return }
+	if err != nil {
+		return
+	}
 
 	err = EncodeArray(e, t.PrepareParameters, e.EncodeParameter)
-	if err != nil { return }
+	if err != nil {
+		return
+	}
 
 	return EncodeArray(e, t.Parameters, e.EncodeParameter)
 }
 
 func (e *SemaEncoder) EncodeRestrictedType(t *sema.RestrictedType) (err error) {
 	err = e.EncodeType(t.Type)
-	if err != nil { return }
+	if err != nil {
+		return
+	}
 
 	return EncodeArray(e, t.Restrictions, e.EncodeInterfaceType)
 }
@@ -516,7 +582,9 @@ func (e *SemaEncoder) EncodeVariableSizedType(t *sema.VariableSizedType) (err er
 
 func (e *SemaEncoder) EncodeConstantSizedType(t *sema.ConstantSizedType) (err error) {
 	err = e.EncodeType(t.Type)
-	if err != nil { return }
+	if err != nil {
+		return
+	}
 
 	return e.EncodeInt64(t.Size)
 }
@@ -541,32 +609,50 @@ func (e *SemaEncoder) EncodeIntegerRangedType(t sema.IntegerRangedType) (err err
 // TODO encode as enum instead? TypeTag does NOT want to be exported...
 func (e *SemaEncoder) EncodeNumericType(t *sema.NumericType) (err error) {
 	err = e.EncodeIsNonNil(t)
-	if err != nil || t == nil { return }
+	if err != nil || t == nil {
+		return
+	}
 
 	// name -> string
 	err = e.EncodeString(t.QualifiedString())
-	if err != nil { return }
+	if err != nil {
+		return
+	}
 
 	err = e.EncodeTypeTag(t.Tag())
-	if err != nil { return }
+	if err != nil {
+		return
+	}
 
 	err = e.EncodeBigInt(t.MinInt())
-	if err != nil { return }
+	if err != nil {
+		return
+	}
 
 	err = e.EncodeBigInt(t.MaxInt())
-	if err != nil { return }
+	if err != nil {
+		return
+	}
 
 	err = e.EncodeBool(t.SupportsSaturatingAdd())
-	if err != nil { return }
+	if err != nil {
+		return
+	}
 
 	err = e.EncodeBool(t.SupportsSaturatingSubtract())
-	if err != nil { return }
+	if err != nil {
+		return
+	}
 
 	err = e.EncodeBool(t.SupportsSaturatingMultiply())
-	if err != nil { return }
+	if err != nil {
+		return
+	}
 
 	err = e.EncodeBool(t.SupportsSaturatingDivide())
-	if err != nil { return }
+	if err != nil {
+		return
+	}
 
 	return e.EncodeBool(t.IsSuperType())
 }
@@ -590,31 +676,49 @@ func (e *SemaEncoder) EncodeFractionalRangedType(t sema.FractionalRangedType) (e
 func (e *SemaEncoder) EncodeFixedPointNumericType(t *sema.FixedPointNumericType) (err error) {
 	// name -> string
 	err = e.EncodeString(t.QualifiedString())
-	if err != nil { return }
+	if err != nil {
+		return
+	}
 
 	err = e.EncodeTypeTag(t.Tag())
-	if err != nil { return }
+	if err != nil {
+		return
+	}
 
 	err = e.EncodeUInt64(uint64(t.Scale()))
-	if err != nil { return }
+	if err != nil {
+		return
+	}
 
 	err = e.EncodeBigInt(t.MinInt())
-	if err != nil { return }
+	if err != nil {
+		return
+	}
 
 	err = e.EncodeBigInt(t.MaxInt())
-	if err != nil { return }
+	if err != nil {
+		return
+	}
 
 	err = e.EncodeBool(t.SupportsSaturatingAdd())
-	if err != nil { return }
+	if err != nil {
+		return
+	}
 
 	err = e.EncodeBool(t.SupportsSaturatingSubtract())
-	if err != nil { return }
+	if err != nil {
+		return
+	}
 
 	err = e.EncodeBool(t.SupportsSaturatingMultiply())
-	if err != nil { return }
+	if err != nil {
+		return
+	}
 
 	err = e.EncodeBool(t.SupportsSaturatingDivide())
-	if err != nil { return }
+	if err != nil {
+		return
+	}
 
 	return e.EncodeBool(t.IsSuperType())
 }
@@ -623,14 +727,18 @@ func (e *SemaEncoder) EncodeBigInt(bi *big.Int) (err error) {
 	sign := bi.Sign()
 	neg := sign == -1
 	err = e.EncodeBool(neg)
-	if err != nil { return }
+	if err != nil {
+		return
+	}
 
 	return e.EncodeBytes(bi.Bytes())
 }
 
 func (e *SemaEncoder) EncodeTypeTag(tag sema.TypeTag) (err error) {
 	err = e.EncodeUInt64(tag.UpperMask())
-	if err != nil { return }
+	if err != nil {
+		return
+	}
 
 	return e.EncodeUInt64(tag.LowerMask())
 }
@@ -702,47 +810,69 @@ func (e *SemaEncoder) EncodeTypeIdentifier(t sema.Type) (err error) {
 func (e *SemaEncoder) EncodeCompositeType(compositeType *sema.CompositeType) (err error) {
 	// Location -> common.Location
 	err = e.EncodeLocation(compositeType.Location)
-	if err != nil { return }
+	if err != nil {
+		return
+	}
 
 	// Identifier -> string
 	err = e.EncodeString(compositeType.Identifier)
-	if err != nil { return }
+	if err != nil {
+		return
+	}
 
 	// Kind -> common.CompositeKind
 	err = e.EncodeUInt64(uint64(compositeType.Kind))
-	if err != nil { return }
+	if err != nil {
+		return
+	}
 
 	// ExplicitInterfaceConformances -> []*InterfaceType
 	err = EncodeArray(e, compositeType.ExplicitInterfaceConformances, e.EncodeInterfaceType)
-	if err != nil { return }
+	if err != nil {
+		return
+	}
 
 	// ImplicitTypeRequirementConformances -> []*CompositeType
 	err = EncodeArray(e, compositeType.ImplicitTypeRequirementConformances, e.EncodeCompositeType)
-	if err != nil { return }
+	if err != nil {
+		return
+	}
 
 	// Members -> *StringMemberOrderedMap
 	err = e.EncodeStringMemberOrderedMap(compositeType.Members)
-	if err != nil { return }
+	if err != nil {
+		return
+	}
 
 	// Fields -> []string
 	err = EncodeArray(e, compositeType.Fields, e.EncodeString)
-	if err != nil { return }
+	if err != nil {
+		return
+	}
 
 	// ConstructorParameters -> []*Parameter
 	err = EncodeArray(e, compositeType.ConstructorParameters, e.EncodeParameter)
-	if err != nil { return }
+	if err != nil {
+		return
+	}
 
 	// nestedTypes -> *StringTypeOrderedMap
 	err = e.EncodeStringTypeOrderedMap(compositeType.GetNestedTypes())
-	if err != nil { return }
+	if err != nil {
+		return
+	}
 
 	// containerType -> Type
 	err = e.EncodeType(compositeType.GetContainerType())
-	if err != nil { return }
+	if err != nil {
+		return
+	}
 
 	// EnumRawType -> Type
 	err = e.EncodeType(compositeType.EnumRawType)
-	if err != nil { return }
+	if err != nil {
+		return
+	}
 
 	// TODO? hasComputedMembers    bool
 
@@ -750,23 +880,30 @@ func (e *SemaEncoder) EncodeCompositeType(compositeType *sema.CompositeType) (er
 	return e.EncodeBool(compositeType.ImportableWithoutLocation)
 }
 
-
 func (e *SemaEncoder) EncodeTypeParameter(p *sema.TypeParameter) (err error) {
 	err = e.EncodeString(p.Name)
-	if err != nil { return }
+	if err != nil {
+		return
+	}
 
 	err = e.EncodeType(p.TypeBound)
-	if err != nil { return }
+	if err != nil {
+		return
+	}
 
 	return e.EncodeBool(p.Optional)
 }
 
 func (e *SemaEncoder) EncodeParameter(parameter *sema.Parameter) (err error) {
 	err = e.EncodeString(parameter.Label)
-	if err != nil { return }
+	if err != nil {
+		return
+	}
 
 	err = e.EncodeString(parameter.Identifier)
-	if err != nil { return }
+	if err != nil {
+		return
+	}
 
 	return e.EncodeTypeAnnotation(parameter.TypeAnnotation)
 }
@@ -783,7 +920,9 @@ func (e *SemaEncoder) EncodeStringMemberOrderedMap(om *sema.StringMemberOrderedM
 		}
 	})
 	err = e.EncodeLength(length)
-	if err != nil { return }
+	if err != nil {
+		return
+	}
 
 	return om.ForeachWithError(func(key string, value *sema.Member) error {
 		if value.IgnoreInSerialization {
@@ -791,7 +930,9 @@ func (e *SemaEncoder) EncodeStringMemberOrderedMap(om *sema.StringMemberOrderedM
 		}
 
 		err := e.EncodeString(key)
-		if err != nil { return err }
+		if err != nil {
+			return err
+		}
 
 		return e.EncodeMember(value)
 	})
@@ -803,11 +944,15 @@ func (e *SemaEncoder) EncodeStringTypeOrderedMap(om *sema.StringTypeOrderedMap) 
 	}
 
 	err = e.EncodeLength(om.Len())
-	if err != nil { return }
+	if err != nil {
+		return
+	}
 
 	return om.ForeachWithError(func(key string, t sema.Type) error {
 		err := e.EncodeString(key)
-		if err != nil { return err }
+		if err != nil {
+			return err
+		}
 
 		return e.EncodeType(t)
 	})
@@ -815,77 +960,115 @@ func (e *SemaEncoder) EncodeStringTypeOrderedMap(om *sema.StringTypeOrderedMap) 
 
 func (e *SemaEncoder) EncodeMember(member *sema.Member) (err error) {
 	err = e.EncodeType(member.ContainerType)
-	if err != nil { return }
+	if err != nil {
+		return
+	}
 
 	err = e.EncodeUInt64(uint64(member.Access))
-	if err != nil { return }
+	if err != nil {
+		return
+	}
 
 	err = e.EncodeAstIdentifier(member.Identifier)
-	if err != nil { return }
+	if err != nil {
+		return
+	}
 
 	err = e.EncodeTypeAnnotation(member.TypeAnnotation)
-	if err != nil { return }
+	if err != nil {
+		return
+	}
 
 	err = e.EncodeUInt64(uint64(member.DeclarationKind))
-	if err != nil { return }
+	if err != nil {
+		return
+	}
 
 	err = e.EncodeUInt64(uint64(member.VariableKind))
-	if err != nil { return }
+	if err != nil {
+		return
+	}
 
 	err = EncodeArray(e, member.ArgumentLabels, e.EncodeString)
-	if err != nil { return }
+	if err != nil {
+		return
+	}
 
 	err = e.EncodeBool(member.Predeclared)
-	if err != nil { return }
+	if err != nil {
+		return
+	}
 
 	return e.EncodeString(member.DocString)
 }
 
 func (e *SemaEncoder) EncodeTypeAnnotation(anno *sema.TypeAnnotation) (err error) {
 	err = e.EncodeBool(anno.IsResource)
-	if err != nil { return }
+	if err != nil {
+		return
+	}
 
 	return e.EncodeType(anno.Type)
 }
 
 func (e *SemaEncoder) EncodeAstIdentifier(id ast.Identifier) (err error) {
 	err = e.EncodeString(id.Identifier)
-	if err != nil { return }
+	if err != nil {
+		return
+	}
 
 	return e.EncodeAstPosition(id.Pos)
 }
 
 func (e *SemaEncoder) EncodeAstPosition(pos ast.Position) (err error) {
 	err = e.EncodeInt64(int64(pos.Offset))
-	if err != nil { return }
+	if err != nil {
+		return
+	}
 
 	err = e.EncodeInt64(int64(pos.Line))
-	if err != nil { return }
+	if err != nil {
+		return
+	}
 
 	return e.EncodeInt64(int64(pos.Column))
 }
 
 func (e *SemaEncoder) EncodeInterfaceType(interfaceType *sema.InterfaceType) (err error) {
 	err = e.EncodeLocation(interfaceType.Location)
-	if err != nil { return }
+	if err != nil {
+		return
+	}
 
 	err = e.EncodeString(interfaceType.Identifier)
-	if err != nil { return }
+	if err != nil {
+		return
+	}
 
 	err = e.EncodeUInt64(uint64(interfaceType.CompositeKind))
-	if err != nil { return }
+	if err != nil {
+		return
+	}
 
 	err = e.EncodeStringMemberOrderedMap(interfaceType.Members)
-	if err != nil { return }
+	if err != nil {
+		return
+	}
 
 	err = EncodeArray(e, interfaceType.Fields, e.EncodeString)
-	if err != nil { return }
+	if err != nil {
+		return
+	}
 
 	err = EncodeArray(e, interfaceType.InitializerParameters, e.EncodeParameter)
-	if err != nil { return }
+	if err != nil {
+		return
+	}
 
 	err = e.EncodeType(interfaceType.GetContainerType())
-	if err != nil { return }
+	if err != nil {
+		return
+	}
 
 	return e.EncodeStringTypeOrderedMap(interfaceType.GetNestedTypes())
 }
@@ -940,38 +1123,50 @@ func (e *SemaEncoder) EncodeLocationPrefix(prefix string) (err error) {
 
 func (e *SemaEncoder) EncodeAddressLocation(t common.AddressLocation) (err error) {
 	err = e.EncodeLocationPrefix(common.AddressLocationPrefix)
-	if err != nil { return }
+	if err != nil {
+		return
+	}
 
 	err = e.EncodeAddress(t.Address)
-	if err != nil { return }
+	if err != nil {
+		return
+	}
 
 	return e.EncodeString(t.Name)
 }
 
 func (e *SemaEncoder) EncodeIdentifierLocation(t common.IdentifierLocation) (err error) {
 	err = e.EncodeLocationPrefix(common.IdentifierLocationPrefix)
-	if err != nil { return }
+	if err != nil {
+		return
+	}
 
 	return e.EncodeString(string(t))
 }
 
 func (e *SemaEncoder) EncodeScriptLocation(t common.ScriptLocation) (err error) {
 	err = e.EncodeLocationPrefix(common.ScriptLocationPrefix)
-	if err != nil { return }
+	if err != nil {
+		return
+	}
 
 	return e.EncodeBytes(t)
 }
 
 func (e *SemaEncoder) EncodeStringLocation(t common.StringLocation) (err error) {
 	err = e.EncodeLocationPrefix(common.StringLocationPrefix)
-	if err != nil { return }
+	if err != nil {
+		return
+	}
 
 	return e.EncodeString(string(t))
 }
 
 func (e *SemaEncoder) EncodeTransactionLocation(t common.TransactionLocation) (err error) {
 	err = e.EncodeLocationPrefix(common.TransactionLocationPrefix)
-	if err != nil { return }
+	if err != nil {
+		return
+	}
 
 	return e.EncodeBytes(t)
 }
@@ -988,7 +1183,9 @@ func (e *SemaEncoder) EncodeString(s string) (err error) {
 // EncodeBytes encodes a byte array.
 func (e *SemaEncoder) EncodeBytes(bytes []byte) (err error) {
 	err = e.EncodeLength(len(bytes))
-	if err != nil { return }
+	if err != nil {
+		return
+	}
 
 	return e.write(bytes)
 }
@@ -1027,10 +1224,14 @@ func (e *SemaEncoder) write(b []byte) (err error) {
 
 func EncodeArray[T any](e *SemaEncoder, arr []T, encodeFn func(T) error) (err error) {
 	err = e.EncodeLength(len(arr))
-	if err != nil { return }
+	if err != nil {
+		return
+	}
 	for _, element := range arr {
 		err = encodeFn(element)
-		if err != nil { return }
+		if err != nil {
+			return
+		}
 	}
 	return
 }
