@@ -885,6 +885,7 @@ type NumericType struct {
 	isSuperType                bool
 }
 
+var _ Type = &NumericType{}
 var _ IntegerRangedType = &NumericType{}
 var _ SaturatingArithmeticType = &NumericType{}
 

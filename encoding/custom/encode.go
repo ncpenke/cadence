@@ -354,28 +354,16 @@ func (e *SemaEncoder) EncodeType(t sema.Type) (err error) {
 		return e.EncodeSimpleType(concreteType)
 	case *sema.CompositeType:
 		return e.EncodeCompositeType(concreteType)
-	//case sema.ValueIndexableType:
-	//	panic("TODO")
-	//case sema.ContainedType:
-	//	panic("TODO")
-	//case sema.ContainerType:
-	//	panic("TODO")
-	//case sema.CompositeKindedType:
-	//	panic("TODO")
-	//case sema.LocatedType:
-	//	panic("TODO")
-	//case sema.ParameterizedType:
-	//	panic("TODO")
 	case *sema.OptionalType:
 		return e.EncodeOptionalType(concreteType)
 	case *sema.GenericType:
 		return e.EncodeGenericType(concreteType)
-	case sema.IntegerRangedType:
-		return e.EncodeIntegerRangedType(concreteType)
-	case sema.FractionalRangedType:
-		return e.EncodeFractionalRangedType(concreteType)
-	//case sema.SaturatingArithmeticType:
-	//	panic("TODO")
+	case *sema.AddressType:
+		return // EncodeTypeIdentifier provided enough info
+	case *sema.NumericType:
+		return e.EncodeNumericType(concreteType)
+	case *sema.FixedPointNumericType:
+		return e.EncodeFixedPointNumericType(concreteType)
 	case sema.ArrayType:
 		return e.EncodeArrayType(concreteType)
 	case *sema.FunctionType:
@@ -384,8 +372,6 @@ func (e *SemaEncoder) EncodeType(t sema.Type) (err error) {
 		return e.EncodeDictionaryType(concreteType)
 	case *sema.ReferenceType:
 		return e.EncodeReferenceType(concreteType)
-	//case *sema.AddressType: // TODO this is an IntegerRangedType so maybe not needed here
-	//	return // type is an empty struct
 	case *sema.TransactionType:
 		return e.EncodeTransactionType(concreteType)
 	case *sema.RestrictedType:
@@ -397,87 +383,76 @@ func (e *SemaEncoder) EncodeType(t sema.Type) (err error) {
 	}
 }
 
-// TODO should each instantiated simple type have an enum associated with it?
-//      much much much smaller than encoding the entire SimpleType struct
+type EncodedSemaSimpleSubType byte
+
+const (
+	EncodedSemaSimpleSubTypeUnknown EncodedSemaSimpleSubType = iota
+	EncodedSemaSimpleSubTypeAnyType
+	EncodedSemaSimpleSubTypeAnyResourceType
+	EncodedSemaSimpleSubTypeAnyStructType
+	EncodedSemaSimpleSubTypeBlockType
+	EncodedSemaSimpleSubTypeBoolType
+	EncodedSemaSimpleSubTypeCharacterType
+	EncodedSemaSimpleSubTypeDeployedContractType
+	EncodedSemaSimpleSubTypeInvalidType
+	EncodedSemaSimpleSubTypeMetaType
+	EncodedSemaSimpleSubTypeNeverType
+	EncodedSemaSimpleSubTypePathType
+	EncodedSemaSimpleSubTypeStoragePathType
+	EncodedSemaSimpleSubTypeCapabilityPathType
+	EncodedSemaSimpleSubTypePublicPathType
+	EncodedSemaSimpleSubTypePrivatePathType
+	EncodedSemaSimpleSubTypeStorableType
+	EncodedSemaSimpleSubTypeStringType
+	EncodedSemaSimpleSubTypeVoidType
+)
+
 func (e *SemaEncoder) EncodeSimpleType(t *sema.SimpleType) (err error) {
-	err = e.EncodeString(t.Name)
-	if err != nil {
-		return
+	subType := EncodedSemaSimpleSubTypeUnknown
+
+	switch t {
+	case sema.AnyType:
+		subType = EncodedSemaSimpleSubTypeAnyType
+	case sema.AnyResourceType:
+		subType = EncodedSemaSimpleSubTypeAnyResourceType
+	case sema.AnyStructType:
+		subType = EncodedSemaSimpleSubTypeAnyStructType
+	case sema.BlockType:
+		subType = EncodedSemaSimpleSubTypeBlockType
+	case sema.BoolType:
+		subType = EncodedSemaSimpleSubTypeBoolType
+	case sema.CharacterType:
+		subType = EncodedSemaSimpleSubTypeCharacterType
+	case sema.DeployedContractType:
+		subType = EncodedSemaSimpleSubTypeDeployedContractType
+	case sema.InvalidType:
+		subType = EncodedSemaSimpleSubTypeInvalidType
+	case sema.MetaType:
+		subType = EncodedSemaSimpleSubTypeMetaType
+	case sema.NeverType:
+		subType = EncodedSemaSimpleSubTypeNeverType
+	case sema.PathType:
+		subType = EncodedSemaSimpleSubTypePathType
+	case sema.StoragePathType:
+		subType = EncodedSemaSimpleSubTypeStoragePathType
+	case sema.CapabilityPathType:
+		subType = EncodedSemaSimpleSubTypeCapabilityPathType
+	case sema.PublicPathType:
+		subType = EncodedSemaSimpleSubTypePublicPathType
+	case sema.PrivatePathType:
+		subType = EncodedSemaSimpleSubTypePrivatePathType
+	case sema.StorableType:
+		subType = EncodedSemaSimpleSubTypeStorableType
+	case sema.StringType:
+		subType = EncodedSemaSimpleSubTypeStringType
+	case sema.VoidType:
+		subType = EncodedSemaSimpleSubTypeVoidType
+
+	default:
+		return fmt.Errorf("unknown simple type: %s", t)
 	}
 
-	err = e.EncodeString(t.QualifiedString())
-	if err != nil {
-		return
-	}
-
-	err = e.EncodeString(string(t.TypeID))
-	if err != nil {
-		return
-	}
-
-	err = e.EncodeTypeTag(t.Tag())
-	if err != nil {
-		return
-	}
-
-	err = e.EncodeBool(t.IsInvalid)
-	if err != nil {
-		return
-	}
-
-	err = e.EncodeBool(t.IsResource)
-	if err != nil {
-		return
-	}
-
-	err = e.EncodeBool(t.Storable)
-	if err != nil {
-		return
-	}
-
-	err = e.EncodeBool(t.Equatable)
-	if err != nil {
-		return
-	}
-
-	err = e.EncodeBool(t.ExternallyReturnable)
-	if err != nil {
-		return
-	}
-
-	err = e.EncodeBool(t.Importable)
-	if err != nil {
-		return
-	}
-
-	// TODO how to handle IsSuperTypeOf?
-	//      should we encode each simple type as an enum?
-	//      then the decoder would find the instantiated simple types
-
-	// TODO Members
-
-	err = e.EncodeStringTypeOrderedMap(t.NestedTypes)
-	if err != nil {
-		return
-	}
-
-	return e.EncodeValueIndexingInfo(t.ValueIndexingInfo)
-}
-
-func (e *SemaEncoder) EncodeValueIndexingInfo(info sema.ValueIndexingInfo) (err error) {
-	err = e.EncodeBool(info.IsValueIndexableType)
-	if err != nil {
-		return
-	}
-
-	err = e.EncodeBool(info.AllowsValueIndexingAssignment)
-	if err != nil {
-		return
-	}
-
-	// TODO ElementType? it's a function, so...
-
-	return e.EncodeNumericType(info.IndexingType)
+	return e.write([]byte{byte(subType)})
 }
 
 func (e *SemaEncoder) EncodeArrayType(t sema.ArrayType) (err error) {
@@ -593,134 +568,116 @@ func (e *SemaEncoder) EncodeGenericType(t *sema.GenericType) (err error) {
 	return e.EncodeTypeParameter(t.TypeParameter)
 }
 
-func (e *SemaEncoder) EncodeIntegerRangedType(t sema.IntegerRangedType) (err error) {
-	// TODO more types?
-	// TODO encode more concrete types instead? like cadence's Int16
-	switch concreteType := t.(type) {
-	case *sema.NumericType:
-		return e.EncodeNumericType(concreteType)
-	case *sema.AddressType:
-		return // AddressType is an empty struct so nothing to encode
-	default:
-		return fmt.Errorf("unexpected integer ranged type: %s", concreteType)
-	}
-}
+type EncodedSemaNumericSubType byte
 
-// TODO encode as enum instead? TypeTag does NOT want to be exported...
+const (
+	EncodedSemaNumericSubTypeUnknown EncodedSemaNumericSubType = iota
+	EncodedSemaNumericSubTypeNumberType
+	EncodedSemaNumericSubTypeSignedNumberType
+	EncodedSemaNumericSubTypeIntegerType
+	EncodedSemaNumericSubTypeSignedIntegerType
+	EncodedSemaNumericSubTypeIntType
+	EncodedSemaNumericSubTypeInt8Type
+	EncodedSemaNumericSubTypeInt16Type
+	EncodedSemaNumericSubTypeInt32Type
+	EncodedSemaNumericSubTypeInt64Type
+	EncodedSemaNumericSubTypeInt128Type
+	EncodedSemaNumericSubTypeInt256Type
+	EncodedSemaNumericSubTypeUIntType
+	EncodedSemaNumericSubTypeUInt8Type
+	EncodedSemaNumericSubTypeUInt16Type
+	EncodedSemaNumericSubTypeUInt32Type
+	EncodedSemaNumericSubTypeUInt64Type
+	EncodedSemaNumericSubTypeUInt128Type
+	EncodedSemaNumericSubTypeUInt256Type
+	EncodedSemaNumericSubTypeWord8Type
+	EncodedSemaNumericSubTypeWord16Type
+	EncodedSemaNumericSubTypeWord32Type
+	EncodedSemaNumericSubTypeWord64Type
+	EncodedSemaNumericSubTypeFixedPointType
+	EncodedSemaNumericSubTypeSignedFixedPointType
+)
+
 func (e *SemaEncoder) EncodeNumericType(t *sema.NumericType) (err error) {
-	err = e.EncodeIsNonNil(t)
-	if err != nil || t == nil {
-		return
-	}
+	numericType := EncodedSemaNumericSubTypeUnknown
 
-	// name -> string
-	err = e.EncodeString(t.QualifiedString())
-	if err != nil {
-		return
-	}
-
-	err = e.EncodeTypeTag(t.Tag())
-	if err != nil {
-		return
-	}
-
-	err = e.EncodeBigInt(t.MinInt())
-	if err != nil {
-		return
-	}
-
-	err = e.EncodeBigInt(t.MaxInt())
-	if err != nil {
-		return
-	}
-
-	err = e.EncodeBool(t.SupportsSaturatingAdd())
-	if err != nil {
-		return
-	}
-
-	err = e.EncodeBool(t.SupportsSaturatingSubtract())
-	if err != nil {
-		return
-	}
-
-	err = e.EncodeBool(t.SupportsSaturatingMultiply())
-	if err != nil {
-		return
-	}
-
-	err = e.EncodeBool(t.SupportsSaturatingDivide())
-	if err != nil {
-		return
-	}
-
-	return e.EncodeBool(t.IsSuperType())
-}
-
-// EncodePresent indicates if the following value is nil or non-nil.
-func (e *SemaEncoder) EncodeIsNonNil(thing any) (err error) {
-	return e.EncodeBool(thing != nil)
-}
-
-func (e *SemaEncoder) EncodeFractionalRangedType(t sema.FractionalRangedType) (err error) {
-	// TODO more types?
-	// TODO encode more concrete types instead? like cadence's Fix64
-	switch concreteType := t.(type) {
-	case *sema.FixedPointNumericType:
-		return e.EncodeFixedPointNumericType(concreteType)
+	switch t {
+	case sema.NumberType:
+		numericType = EncodedSemaNumericSubTypeNumberType
+	case sema.SignedNumberType:
+		numericType = EncodedSemaNumericSubTypeSignedNumberType
+	case sema.IntegerType:
+		numericType = EncodedSemaNumericSubTypeIntegerType
+	case sema.SignedIntegerType:
+		numericType = EncodedSemaNumericSubTypeSignedIntegerType
+	case sema.IntType:
+		numericType = EncodedSemaNumericSubTypeIntType
+	case sema.Int8Type:
+		numericType = EncodedSemaNumericSubTypeInt8Type
+	case sema.Int16Type:
+		numericType = EncodedSemaNumericSubTypeInt16Type
+	case sema.Int32Type:
+		numericType = EncodedSemaNumericSubTypeInt32Type
+	case sema.Int64Type:
+		numericType = EncodedSemaNumericSubTypeInt64Type
+	case sema.Int128Type:
+		numericType = EncodedSemaNumericSubTypeInt128Type
+	case sema.Int256Type:
+		numericType = EncodedSemaNumericSubTypeInt256Type
+	case sema.UIntType:
+		numericType = EncodedSemaNumericSubTypeUIntType
+	case sema.UInt8Type:
+		numericType = EncodedSemaNumericSubTypeUInt8Type
+	case sema.UInt16Type:
+		numericType = EncodedSemaNumericSubTypeUInt16Type
+	case sema.UInt32Type:
+		numericType = EncodedSemaNumericSubTypeUInt32Type
+	case sema.UInt64Type:
+		numericType = EncodedSemaNumericSubTypeUInt64Type
+	case sema.UInt128Type:
+		numericType = EncodedSemaNumericSubTypeUInt128Type
+	case sema.UInt256Type:
+		numericType = EncodedSemaNumericSubTypeUInt256Type
+	case sema.Word8Type:
+		numericType = EncodedSemaNumericSubTypeWord8Type
+	case sema.Word16Type:
+		numericType = EncodedSemaNumericSubTypeWord16Type
+	case sema.Word32Type:
+		numericType = EncodedSemaNumericSubTypeWord32Type
+	case sema.Word64Type:
+		numericType = EncodedSemaNumericSubTypeWord64Type
+	case sema.FixedPointType:
+		numericType = EncodedSemaNumericSubTypeFixedPointType
+	case sema.SignedFixedPointType:
+		numericType = EncodedSemaNumericSubTypeSignedFixedPointType
 	default:
-		return fmt.Errorf("Unexpected fractional ranged type: %s", concreteType)
+		return fmt.Errorf("unexpected numeric type: %s", t)
 	}
+
+	return e.write([]byte{byte(numericType)})
 }
+
+type EncodedSemaFixedPointNumericSubType byte
+
+const (
+	EncodedSemaFixedPointNumericSubTypeUnknown EncodedSemaFixedPointNumericSubType = iota
+	EncodedSemaFixedPointNumericSubTypeFix64Type
+	EncodedSemaFixedPointNumericSubTypeUFix64Type
+)
 
 func (e *SemaEncoder) EncodeFixedPointNumericType(t *sema.FixedPointNumericType) (err error) {
-	// name -> string
-	err = e.EncodeString(t.QualifiedString())
-	if err != nil {
-		return
+	fixedPointNumericType := EncodedSemaFixedPointNumericSubTypeUnknown
+
+	switch t {
+	case sema.Fix64Type:
+		fixedPointNumericType = EncodedSemaFixedPointNumericSubTypeFix64Type
+	case sema.UFix64Type:
+		fixedPointNumericType = EncodedSemaFixedPointNumericSubTypeUFix64Type
+	default:
+		return fmt.Errorf("unexpected fixed point numeric type: %s", t)
 	}
 
-	err = e.EncodeTypeTag(t.Tag())
-	if err != nil {
-		return
-	}
-
-	err = e.EncodeUInt64(uint64(t.Scale()))
-	if err != nil {
-		return
-	}
-
-	err = e.EncodeBigInt(t.MinInt())
-	if err != nil {
-		return
-	}
-
-	err = e.EncodeBigInt(t.MaxInt())
-	if err != nil {
-		return
-	}
-
-	err = e.EncodeBool(t.SupportsSaturatingAdd())
-	if err != nil {
-		return
-	}
-
-	err = e.EncodeBool(t.SupportsSaturatingSubtract())
-	if err != nil {
-		return
-	}
-
-	err = e.EncodeBool(t.SupportsSaturatingMultiply())
-	if err != nil {
-		return
-	}
-
-	err = e.EncodeBool(t.SupportsSaturatingDivide())
-	if err != nil {
-		return
-	}
-
-	return e.EncodeBool(t.IsSuperType())
+	return e.write([]byte{byte(fixedPointNumericType)})
 }
 
 func (e *SemaEncoder) EncodeBigInt(bi *big.Int) (err error) {
@@ -743,7 +700,6 @@ func (e *SemaEncoder) EncodeTypeTag(tag sema.TypeTag) (err error) {
 	return e.EncodeUInt64(tag.LowerMask())
 }
 
-// TODO can I use TypeTag instead? runtime/sema/type_tags.go:32
 type EncodedSema byte
 
 const (
@@ -1215,6 +1171,11 @@ func (e *SemaEncoder) EncodeLength(length int) (err error) {
 
 func (e *SemaEncoder) EncodeAddress(address common.Address) (err error) {
 	return e.write(address[:])
+}
+
+// EncodePresent indicates if the following value is nil or non-nil.
+func (e *SemaEncoder) EncodeIsNonNil(thing any) (err error) {
+	return e.EncodeBool(thing != nil)
 }
 
 func (e *SemaEncoder) write(b []byte) (err error) {
