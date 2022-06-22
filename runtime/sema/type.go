@@ -3840,6 +3840,15 @@ func (t *CompositeType) IsExternallyReturnable(results map[*Member]bool) bool {
 	return true
 }
 
+func (t *CompositeType) HasComputedMembers() bool {
+	return t.hasComputedMembers
+}
+
+// SetHasComputedMembers is intended to only be called for deserialization.
+func (t *CompositeType) SetHasComputedMembers(val bool) {
+	t.hasComputedMembers = val
+}
+
 func (t *CompositeType) IsEquatable() bool {
 	// TODO: add support for more composite kinds
 	return t.Kind == common.CompositeKindEnum
@@ -3987,6 +3996,7 @@ func NewUnmeteredPublicFunctionMember(
 	)
 }
 
+// TODO is it a problem Member itself isn't metered?
 func NewPublicFunctionMember(
 	memoryGauge common.MemoryGauge,
 	containerType Type,

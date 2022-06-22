@@ -255,7 +255,7 @@ func (d *Decoder) DecodeLength() (l int, err error) {
 		return
 	}
 
-	asUint32 := binary.LittleEndian.Uint32(b)
+	asUint32 := binary.BigEndian.Uint32(b)
 	l = int(asUint32)
 
 	return
@@ -364,6 +364,8 @@ func (d *SemaDecoder) DecodeType() (t sema.Type, err error) {
 		return d.DecodeRestrictedType()
 	case EncodedSemaCapabilityType:
 		return d.DecodeCapabilityType()
+	case EncodedSemaNilType:
+		return // no type specified
 	default:
 		err = fmt.Errorf("unknown type identifier: %d", typeIdentifier)
 	}
@@ -400,32 +402,28 @@ func (d *SemaDecoder) DecodeRestrictedType() (rt *sema.RestrictedType, err error
 }
 
 func (d *SemaDecoder) DecodeTransactionType() (tx *sema.TransactionType, err error) {
-	members, err := d.DecodeStringMemberOrderedMap()
+	tx = &sema.TransactionType{}
+
+	tx.Members, err = d.DecodeStringMemberOrderedMap(tx)
 	if err != nil {
 		return
 	}
 
-	fields, err := DecodeArray(d, d.DecodeString)
+	tx.Fields, err = DecodeArray(d, d.DecodeString)
 	if err != nil {
 		return
 	}
 
-	prepareParameters, err := DecodeArray(d, d.DecodeParameter)
+	tx.PrepareParameters, err = DecodeArray(d, d.DecodeParameter)
 	if err != nil {
 		return
 	}
 
-	parameters, err := DecodeArray(d, d.DecodeParameter)
+	tx.Parameters, err = DecodeArray(d, d.DecodeParameter)
 	if err != nil {
 		return
 	}
 
-	tx = &sema.TransactionType{
-		Members:           members,
-		Fields:            fields,
-		PrepareParameters: prepareParameters,
-		Parameters:        parameters,
-	}
 	return
 }
 
@@ -466,22 +464,24 @@ func (d *SemaDecoder) DecodeDictionaryType() (dict *sema.DictionaryType, err err
 }
 
 func (d *SemaDecoder) DecodeFunctionType() (ft *sema.FunctionType, err error) {
-	isConstructor, err := d.DecodeBool()
+	ft = &sema.FunctionType{}
+
+	ft.IsConstructor, err = d.DecodeBool()
 	if err != nil {
 		return
 	}
 
-	typeParameters, err := DecodeArray(d, d.DecodeTypeParameter)
+	ft.TypeParameters, err = DecodeArray(d, d.DecodeTypeParameter)
 	if err != nil {
 		return
 	}
 
-	parameters, err := DecodeArray(d, d.DecodeParameter)
+	ft.Parameters, err = DecodeArray(d, d.DecodeParameter)
 	if err != nil {
 		return
 	}
 
-	returnTypeAnnotation, err := d.DecodeTypeAnnotation()
+	ft.ReturnTypeAnnotation, err = d.DecodeTypeAnnotation()
 	if err != nil {
 		return
 	}
@@ -491,23 +491,15 @@ func (d *SemaDecoder) DecodeFunctionType() (ft *sema.FunctionType, err error) {
 		return
 	}
 	requiredArgmentCount := int(requiredArgmentCountInt64)
+	ft.RequiredArgumentCount = &requiredArgmentCount
 
 	// TODO is ArgumentExpressionCheck needed?
 
-	members, err := d.DecodeStringMemberOrderedMap()
+	ft.Members, err = d.DecodeStringMemberOrderedMap(ft)
 	if err != nil {
 		return
 	}
 
-	ft = &sema.FunctionType{
-		IsConstructor:            isConstructor,
-		TypeParameters:           typeParameters,
-		Parameters:               parameters,
-		ReturnTypeAnnotation:     returnTypeAnnotation,
-		RequiredArgumentCount:    &requiredArgmentCount,
-		ArgumentExpressionsCheck: nil,
-		Members:                  members,
-	}
 	return
 }
 
@@ -552,6 +544,8 @@ func (d *SemaDecoder) DecodeNumericType() (t *sema.NumericType, err error) {
 		t = sema.SignedNumberType
 	case EncodedSemaNumericSubTypeIntegerType:
 		t = sema.IntegerType
+	case EncodedSemaNumericSubTypeSignedIntegerType:
+		t = sema.SignedIntegerType
 	case EncodedSemaNumericSubTypeIntType:
 		t = sema.IntType
 	case EncodedSemaNumericSubTypeInt8Type:
@@ -567,19 +561,19 @@ func (d *SemaDecoder) DecodeNumericType() (t *sema.NumericType, err error) {
 	case EncodedSemaNumericSubTypeInt256Type:
 		t = sema.Int256Type
 	case EncodedSemaNumericSubTypeUIntType:
-		t = sema.IntType
+		t = sema.UIntType
 	case EncodedSemaNumericSubTypeUInt8Type:
-		t = sema.Int8Type
+		t = sema.UInt8Type
 	case EncodedSemaNumericSubTypeUInt16Type:
-		t = sema.Int16Type
+		t = sema.UInt16Type
 	case EncodedSemaNumericSubTypeUInt32Type:
-		t = sema.Int32Type
+		t = sema.UInt32Type
 	case EncodedSemaNumericSubTypeUInt64Type:
-		t = sema.Int64Type
+		t = sema.UInt64Type
 	case EncodedSemaNumericSubTypeUInt128Type:
-		t = sema.Int128Type
+		t = sema.UInt128Type
 	case EncodedSemaNumericSubTypeUInt256Type:
-		t = sema.Int256Type
+		t = sema.UInt256Type
 	case EncodedSemaNumericSubTypeWord8Type:
 		t = sema.Word8Type
 	case EncodedSemaNumericSubTypeWord16Type:
@@ -615,10 +609,6 @@ func (d *SemaDecoder) DecodeFixedPointNumericType() (t *sema.FixedPointNumericTy
 	}
 
 	return
-}
-
-func (d *SemaDecoder) DecodeIsNotNil() (isNotNil bool, err error) {
-	return d.DecodeBool()
 }
 
 func (d *SemaDecoder) DecodeGenericType() (t *sema.GenericType, err error) {
@@ -701,12 +691,14 @@ func (d *SemaDecoder) DecodeSimpleType() (t *sema.SimpleType, err error) {
 }
 
 func (d *SemaDecoder) DecodeCompositeType() (t *sema.CompositeType, err error) {
-	location, err := d.DecodeLocation()
+	t = &sema.CompositeType{}
+
+	t.Location, err = d.DecodeLocation()
 	if err != nil {
 		return
 	}
 
-	identifier, err := d.DecodeString()
+	t.Identifier, err = d.DecodeString()
 	if err != nil {
 		return
 	}
@@ -715,28 +707,89 @@ func (d *SemaDecoder) DecodeCompositeType() (t *sema.CompositeType, err error) {
 	if err != nil {
 		return
 	}
+	t.Kind = common.CompositeKind(kind)
 
-	explicitInterfaceConformances, err := DecodeArray(d, d.DecodeInterfaceType)
+	t.ExplicitInterfaceConformances, err = DecodeArray(d, d.DecodeInterfaceType)
 	if err != nil {
 		return
 	}
 
-	implicitTypeRequirementConformances, err := DecodeArray(d, d.DecodeCompositeType)
+	t.ImplicitTypeRequirementConformances, err = DecodeArray(d, d.DecodeCompositeType)
 	if err != nil {
 		return
 	}
 
-	members, err := d.DecodeStringMemberOrderedMap()
+	t.Members, err = d.DecodeStringMemberOrderedMap(t)
 	if err != nil {
 		return
 	}
 
-	fields, err := DecodeArray(d, d.DecodeString)
+	t.Fields, err = DecodeArray(d, d.DecodeString)
 	if err != nil {
 		return
 	}
 
-	constructorParameters, err := DecodeArray(d, d.DecodeParameter)
+	t.ConstructorParameters, err = DecodeArray(d, d.DecodeParameter)
+	if err != nil {
+		return
+	}
+
+	// TODO does this infinite loop?
+	containerType, err := d.DecodeType()
+	if err != nil {
+		return
+	}
+	t.SetContainerType(containerType)
+
+	t.EnumRawType, err = d.DecodeType()
+	if err != nil {
+		return
+	}
+
+	hasComputedMembers, err := d.DecodeBool()
+	if err != nil {
+		return
+	}
+	t.SetHasComputedMembers(hasComputedMembers)
+
+	t.ImportableWithoutLocation, err = d.DecodeBool()
+	if err != nil {
+		return
+	}
+
+	return
+}
+
+func (d *SemaDecoder) DecodeInterfaceType() (t *sema.InterfaceType, err error) {
+	t = &sema.InterfaceType{}
+
+	t.Location, err = d.DecodeLocation()
+	if err != nil {
+		return
+	}
+
+	t.Identifier, err = d.DecodeString()
+	if err != nil {
+		return
+	}
+
+	kind, err := d.DecodeUInt64()
+	if err != nil {
+		return
+	}
+	t.CompositeKind = common.CompositeKind(kind)
+
+	t.Members, err = d.DecodeStringMemberOrderedMap(t)
+	if err != nil {
+		return
+	}
+
+	t.Fields, err = DecodeArray(d, d.DecodeString)
+	if err != nil {
+		return
+	}
+
+	t.InitializerParameters, err = DecodeArray(d, d.DecodeParameter)
 	if err != nil {
 		return
 	}
@@ -745,44 +798,8 @@ func (d *SemaDecoder) DecodeCompositeType() (t *sema.CompositeType, err error) {
 	if err != nil {
 		return
 	}
-
-	enumRawType, err := d.DecodeType()
-	if err != nil {
-		return
-	}
-
-	importableWithoutLocation, err := d.DecodeBool()
-	if err != nil {
-		return
-	}
-
-	t = &sema.CompositeType{
-		Location:                            location,
-		Identifier:                          identifier,
-		Kind:                                common.CompositeKind(kind),
-		ExplicitInterfaceConformances:       explicitInterfaceConformances,
-		ImplicitTypeRequirementConformances: implicitTypeRequirementConformances,
-		Members:                             members,
-		Fields:                              fields,
-		ConstructorParameters:               constructorParameters,
-		EnumRawType:                         enumRawType,
-		ImportableWithoutLocation:           importableWithoutLocation,
-	}
 	t.SetContainerType(containerType)
-	return
-}
 
-func (d *SemaDecoder) DecodeInterfaceType() (t *sema.InterfaceType, err error) {
-	// TODO
-
-	t = &sema.InterfaceType{
-		Location:              nil,
-		Identifier:            "",
-		CompositeKind:         0,
-		Members:               nil,
-		Fields:                nil,
-		InitializerParameters: nil,
-	}
 	return
 }
 
@@ -835,7 +852,7 @@ func (d *SemaDecoder) DecodeParameter() (parameter *sema.Parameter, err error) {
 	return
 }
 
-func (d *SemaDecoder) DecodeStringMemberOrderedMap() (om *sema.StringMemberOrderedMap, err error) {
+func (d *SemaDecoder) DecodeStringMemberOrderedMap(containerType sema.Type) (om *sema.StringMemberOrderedMap, err error) {
 	length, err := d.DecodeLength()
 	if err != nil {
 		return
@@ -851,7 +868,7 @@ func (d *SemaDecoder) DecodeStringMemberOrderedMap() (om *sema.StringMemberOrder
 		}
 
 		var member *sema.Member
-		member, err = d.DecodeMember()
+		member, err = d.DecodeMember(containerType)
 		if err != nil {
 			return
 		}
@@ -862,12 +879,7 @@ func (d *SemaDecoder) DecodeStringMemberOrderedMap() (om *sema.StringMemberOrder
 	return
 }
 
-func (d *SemaDecoder) DecodeMember() (member *sema.Member, err error) {
-	containerType, err := d.DecodeType()
-	if err != nil {
-		return
-	}
-
+func (d *SemaDecoder) DecodeMember(containerType sema.Type) (member *sema.Member, err error) {
 	access, err := d.DecodeUInt64()
 	if err != nil {
 		return
@@ -989,7 +1001,10 @@ func (d *SemaDecoder) DecodeLocation() (location common.Location, err error) {
 	switch prefix {
 	case common.AddressLocationPrefix:
 		return d.DecodeAddressLocation()
-		// TODO more locations
+	case NilLocationPrefix:
+		return
+
+	// TODO more locations
 	default:
 		err = fmt.Errorf("unknown location prefix: %s", prefix)
 	}
@@ -1056,7 +1071,7 @@ func (d *SemaDecoder) DecodeLength() (length int, err error) {
 		return
 	}
 
-	asUint32 := binary.LittleEndian.Uint32(b)
+	asUint32 := binary.BigEndian.Uint32(b)
 	length = int(asUint32)
 	return
 }
@@ -1067,10 +1082,10 @@ func (d *SemaDecoder) DecodeBool() (boolean bool, err error) {
 		return
 	}
 
-	switch b[0] {
-	case 0:
+	switch EncodedBool(b[0]) {
+	case EncodedBoolFalse:
 		boolean = false
-	case 1:
+	case EncodedBoolTrue:
 		boolean = true
 	default:
 		err = fmt.Errorf("invalid boolean value: %d", b[0])
@@ -1080,12 +1095,12 @@ func (d *SemaDecoder) DecodeBool() (boolean bool, err error) {
 }
 
 func (d *SemaDecoder) DecodeUInt64() (u uint64, err error) {
-	err = binary.Read(d.r, binary.LittleEndian, &u)
+	err = binary.Read(d.r, binary.BigEndian, &u)
 	return
 }
 
 func (d *SemaDecoder) DecodeInt64() (i int64, err error) {
-	err = binary.Read(d.r, binary.LittleEndian, &i)
+	err = binary.Read(d.r, binary.BigEndian, &i)
 	return
 }
 
@@ -1096,6 +1111,11 @@ func (d *SemaDecoder) read(howManyBytes int) (b []byte, err error) {
 }
 
 func DecodeArray[T any](d *SemaDecoder, decodeFn func() (T, error)) (arr []T, err error) {
+	isNil, err := d.DecodeBool()
+	if isNil || err != nil {
+		return
+	}
+
 	length, err := d.DecodeLength()
 	if err != nil {
 		return

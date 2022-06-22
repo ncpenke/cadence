@@ -255,7 +255,7 @@ func (e *Encoder) EncodeLength(length int) (err error) {
 	// TODO could type conversion be done cheaper since length is for sure positive?
 	l := uint32(length)
 	blob := make([]byte, 4)
-	binary.LittleEndian.PutUint32(blob, l)
+	binary.BigEndian.PutUint32(blob, l)
 
 	_, err = e.w.Write(blob)
 
@@ -358,8 +358,6 @@ func (e *SemaEncoder) EncodeType(t sema.Type) (err error) {
 		return e.EncodeOptionalType(concreteType)
 	case *sema.GenericType:
 		return e.EncodeGenericType(concreteType)
-	case *sema.AddressType:
-		return // EncodeTypeIdentifier provided enough info
 	case *sema.NumericType:
 		return e.EncodeNumericType(concreteType)
 	case *sema.FixedPointNumericType:
@@ -378,6 +376,8 @@ func (e *SemaEncoder) EncodeType(t sema.Type) (err error) {
 		return e.EncodeRestrictedType(concreteType)
 	case *sema.CapabilityType:
 		return e.EncodeCapabilityType(concreteType)
+	case *sema.AddressType, nil:
+		return // EncodeTypeIdentifier provided enough info
 	default:
 		return fmt.Errorf("unexpected type: %s", concreteType)
 	}
@@ -487,9 +487,16 @@ func (e *SemaEncoder) EncodeFunctionType(t *sema.FunctionType) (err error) {
 		return
 	}
 
-	err = e.EncodeInt64(int64(*t.RequiredArgumentCount))
-	if err != nil {
-		return
+	if t.RequiredArgumentCount == nil {
+		err = e.EncodeInt64(0)
+		if err != nil {
+			return
+		}
+	} else {
+		err = e.EncodeInt64(int64(*t.RequiredArgumentCount))
+		if err != nil {
+			return
+		}
 	}
 
 	// TODO can ArgumentExpressionCheck by omitted?
@@ -704,6 +711,7 @@ type EncodedSema byte
 
 const (
 	EncodedSemaUnknown EncodedSema = iota
+	EncodedSemaNilType             // no type is specified
 	EncodedSemaSimpleType
 	EncodedSemaCompositeType
 	EncodedSemaOptionalType
@@ -723,6 +731,7 @@ const (
 
 func (e *SemaEncoder) EncodeTypeIdentifier(t sema.Type) (err error) {
 	id := EncodedSemaUnknown
+
 	switch concreteType := t.(type) {
 	case *sema.SimpleType:
 		id = EncodedSemaSimpleType
@@ -754,16 +763,36 @@ func (e *SemaEncoder) EncodeTypeIdentifier(t sema.Type) (err error) {
 		id = EncodedSemaRestrictedType
 	case *sema.CapabilityType:
 		id = EncodedSemaCapabilityType
+	case nil:
+		id = EncodedSemaNilType
 	default:
 		return fmt.Errorf("unexpected type: %s", concreteType)
+	}
+
+	// TODO remove
+	if id == 0 {
+		panic("type is zero somehow")
 	}
 
 	return e.write([]byte{byte(id)})
 }
 
+type EncodedSemaBuiltInCompositeType byte
+
+const (
+	EncodedSemaBuiltInCompositeTypeUnknown EncodedSemaBuiltInCompositeType = iota
+	EncodedSemaBuiltInCompositeTypePublicAccountType
+)
+
+// TODO encode built-in CompositeTypes separately because they have unencodable values
+//      (trying to avoid messing with CompositeType.nestedTypes)
 // TODO are composite types encodable is CompositeType.IsStorable() is false?
 // TODO if IsImportable is false then do we want to skip for execution state storage?
 func (e *SemaEncoder) EncodeCompositeType(compositeType *sema.CompositeType) (err error) {
+	if compositeType.IsContainerType() {
+		return fmt.Errorf("unexpected container type: %s", compositeType)
+	}
+
 	// Location -> common.Location
 	err = e.EncodeLocation(compositeType.Location)
 	if err != nil {
@@ -812,12 +841,6 @@ func (e *SemaEncoder) EncodeCompositeType(compositeType *sema.CompositeType) (er
 		return
 	}
 
-	// nestedTypes -> *StringTypeOrderedMap
-	err = e.EncodeStringTypeOrderedMap(compositeType.GetNestedTypes())
-	if err != nil {
-		return
-	}
-
 	// containerType -> Type
 	err = e.EncodeType(compositeType.GetContainerType())
 	if err != nil {
@@ -830,7 +853,11 @@ func (e *SemaEncoder) EncodeCompositeType(compositeType *sema.CompositeType) (er
 		return
 	}
 
-	// TODO? hasComputedMembers    bool
+	// hasComputedMembers -> bool
+	err = e.EncodeBool(compositeType.HasComputedMembers())
+	if err != nil {
+		return
+	}
 
 	// ImportableWithoutLocation -> bool
 	return e.EncodeBool(compositeType.ImportableWithoutLocation)
@@ -894,32 +921,7 @@ func (e *SemaEncoder) EncodeStringMemberOrderedMap(om *sema.StringMemberOrderedM
 	})
 }
 
-func (e *SemaEncoder) EncodeStringTypeOrderedMap(om *sema.StringTypeOrderedMap) (err error) {
-	if om == nil {
-		return e.EncodeLength(0)
-	}
-
-	err = e.EncodeLength(om.Len())
-	if err != nil {
-		return
-	}
-
-	return om.ForeachWithError(func(key string, t sema.Type) error {
-		err := e.EncodeString(key)
-		if err != nil {
-			return err
-		}
-
-		return e.EncodeType(t)
-	})
-}
-
 func (e *SemaEncoder) EncodeMember(member *sema.Member) (err error) {
-	err = e.EncodeType(member.ContainerType)
-	if err != nil {
-		return
-	}
-
 	err = e.EncodeUInt64(uint64(member.Access))
 	if err != nil {
 		return
@@ -1021,33 +1023,45 @@ func (e *SemaEncoder) EncodeInterfaceType(interfaceType *sema.InterfaceType) (er
 		return
 	}
 
+	// TODO infinite recursion?
 	err = e.EncodeType(interfaceType.GetContainerType())
 	if err != nil {
 		return
 	}
 
-	return e.EncodeStringTypeOrderedMap(interfaceType.GetNestedTypes())
+	// TODO need to handle nested types? maybe same as composites: enums for built-ins?
+
+	return
 }
 
+type EncodedBool byte
+
+const (
+	EncodedBoolUnknown EncodedBool = iota
+	EncodedBoolFalse
+	EncodedBoolTrue
+)
+
 func (e *SemaEncoder) EncodeBool(boolean bool) (err error) {
-	b := []byte{0}
+	b := EncodedBoolFalse
 	if boolean {
-		b[0] = 1
+		b = EncodedBoolTrue
 	}
-	return e.write(b)
+
+	return e.write([]byte{byte(b)})
 }
 
 // TODO use a more efficient encoder than `binary` (they say to in their top source comment)
 func (e *SemaEncoder) EncodeUInt64(i uint64) (err error) {
-	return binary.Write(e.w, binary.LittleEndian, i)
+	return binary.Write(e.w, binary.BigEndian, i)
 }
 
 func (e *SemaEncoder) EncodeInt64(i int64) (err error) {
-	return binary.Write(e.w, binary.LittleEndian, i)
+	return binary.Write(e.w, binary.BigEndian, i)
 }
 
 func (e *SemaEncoder) EncodeInt32(i int32) (err error) {
-	return binary.Write(e.w, binary.LittleEndian, i)
+	return binary.Write(e.w, binary.BigEndian, i)
 }
 
 func (e *SemaEncoder) EncodeLocation(location common.Location) (err error) {
@@ -1064,8 +1078,10 @@ func (e *SemaEncoder) EncodeLocation(location common.Location) (err error) {
 		return e.EncodeTransactionLocation(concreteType)
 	case common.REPLLocation:
 		return e.EncodeREPLLocation()
+	case nil:
+		return e.EncodeNilLocation()
 	default:
-		return fmt.Errorf("unexpected loation type: %s", concreteType)
+		return fmt.Errorf("unexpected location type: %s", concreteType)
 	}
 }
 
@@ -1075,6 +1091,13 @@ func (e *SemaEncoder) EncodeLocation(location common.Location) (err error) {
 func (e *SemaEncoder) EncodeLocationPrefix(prefix string) (err error) {
 	char := prefix[0]
 	return e.write([]byte{char})
+}
+
+var NilLocationPrefix = "\x00"
+
+// EncodeNilLocation encodes a value that indicates that no location is specified
+func (e *SemaEncoder) EncodeNilLocation() (err error) {
+	return e.EncodeLocationPrefix(NilLocationPrefix)
 }
 
 func (e *SemaEncoder) EncodeAddressLocation(t common.AddressLocation) (err error) {
@@ -1159,23 +1182,13 @@ func (e *SemaEncoder) EncodeLength(length int) (err error) {
 	}
 
 	// TODO is type conversion safe here?
-	// TODO could type conversion be done cheaper since length is for sure positive?
 	l := uint32(length)
-	blob := make([]byte, 4)
-	binary.LittleEndian.PutUint32(blob, l)
 
-	_, err = e.w.Write(blob)
-
-	return
+	return binary.Write(e.w, binary.BigEndian, l)
 }
 
 func (e *SemaEncoder) EncodeAddress(address common.Address) (err error) {
 	return e.write(address[:])
-}
-
-// EncodePresent indicates if the following value is nil or non-nil.
-func (e *SemaEncoder) EncodeIsNonNil(thing any) (err error) {
-	return e.EncodeBool(thing != nil)
 }
 
 func (e *SemaEncoder) write(b []byte) (err error) {
@@ -1184,15 +1197,22 @@ func (e *SemaEncoder) write(b []byte) (err error) {
 }
 
 func EncodeArray[T any](e *SemaEncoder, arr []T, encodeFn func(T) error) (err error) {
+	err = e.EncodeBool(arr == nil)
+	if arr == nil || err != nil {
+		return
+	}
+
 	err = e.EncodeLength(len(arr))
 	if err != nil {
 		return
 	}
+
 	for _, element := range arr {
 		err = encodeFn(element)
 		if err != nil {
 			return
 		}
 	}
+
 	return
 }
